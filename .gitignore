@@ -1,0 +1,11 @@
+*.png
+*.bmp
+*.exe
+*.g98
+*.spr
+*:Zone.Identifier
+build/
+.venv/
+__pycache__/
+*.pyc
+

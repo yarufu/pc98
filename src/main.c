@@ -74,6 +74,9 @@ static void ui_draw_current_stands(enum StandId left_stand,
 static int input_wait_choice_jis(const uint16_t *choice1, int choice1_len,
                                  const uint16_t *choice2, int choice2_len);
 static void handle_choice_block(FILE *fp);
+static int find_label_and_jump(FILE *fp, const char *label_name);
+static void trim_leading_spaces(char *str);
+
 
 
 static void ui_draw_wait_mark(int x, int y, unsigned char color)
@@ -1021,6 +1024,70 @@ static void remove_newline(char *str)
     }
 }
 
+// 先頭空白を飛ばす小関数
+static void trim_leading_spaces(char *str)
+{
+    int i;
+    int j;
+
+    i = 0;
+    while (str[i] == ' ' || str[i] == '\t') {
+        i++;
+    }
+
+    if (i == 0) {
+        return;
+    }
+
+    j = 0;
+    while (str[i] != '\0') {
+        str[j++] = str[i++];
+    }
+    str[j] = '\0';
+}
+
+// ラベルを探してそこへ飛ぶ関数
+static int find_label_and_jump(FILE *fp, const char *label_name)
+{
+    char line[256];
+    char cmd[32];
+    char arg1[64];
+    int count;
+
+    if (fp == 0 || label_name == 0 || label_name[0] == '\0') {
+        return 0;
+    }
+
+    /* いったん先頭へ戻ってラベルを探す */
+    fseek(fp, 0L, SEEK_SET);
+
+    while (fgets(line, sizeof(line), fp) != 0) {
+        remove_newline(line);
+        trim_leading_spaces(line);
+
+        if (line[0] != '#') {
+            continue;
+        }
+
+        cmd[0] = '\0';
+        arg1[0] = '\0';
+
+        count = sscanf(line, "%31s %63s", cmd, arg1);
+        if (count >= 2) {
+            if (strcmp(cmd, "#label") == 0 && strcmp(arg1, label_name) == 0) {
+                /*
+                 * ここで見つかった時点で、
+                 * fp は #label 行の次の行を指している。
+                 * そのまま戻れば、次の fgets() から本編再開できる。
+                 */
+                return 1;
+            }
+        }
+    }
+
+    return 0;
+}
+
 // Shift_JIS 1文字 → JIS 1文字
 static uint16_t sjis_to_jis(uint8_t sjis_hi, uint8_t sjis_lo)
 {
@@ -1155,8 +1222,32 @@ static void run_script_sjis(void)
         }
 
         if (line[0] == '#') {
+            char cmd[32];
+            char arg1[64];
+            int count;
+
+            cmd[0] = '\0';
+            arg1[0] = '\0';
+
+            count = sscanf(line, "%31s %63s", cmd, arg1);
+
             if (strcmp(line, "#choice") == 0) {
                 handle_choice_block(fp);
+                continue;
+            }
+
+            /* #label は目印なので何もしない */
+            if (strcmp(cmd, "#label") == 0) {
+                continue;
+            }
+
+            /* #jump label_name */
+            if (strcmp(cmd, "#jump") == 0) {
+                if (count >= 2) {
+                    if (!find_label_and_jump(fp, arg1)) {
+                        /* 見つからない時は今は何もしない */
+                    }
+                }
                 continue;
             }
 

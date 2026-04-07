@@ -1,20 +1,15 @@
-#label start
 #bg gym
 #left anzai normal
 #right none normal
 
+#label loop
+#if seen_mitsui second_time
+
 [安西先生]
-あきらめたら、そこで、試合終了ですよ？
+これは初回のセリフです。
+#set seen_mitsui
+#jump loop
 
-#jump end
-
-#right mitsui normal
-
-[三井]
-まだだ、まだ終わらんよ！
-
-#label end
-#right sakuragi happy
-
-[桜木]
-サンヨーは俺が倒す！
+#label second_time
+[安西先生]
+これは2回目以降のセリフです。

@@ -33,6 +33,17 @@ enum FaceId {
     FACE_SURPRISED
 };
 
+typedef struct {
+    char name[32];
+    int value;
+} GameFlag;
+
+#define MAX_FLAGS 16
+
+static GameFlag g_flags[MAX_FLAGS];
+
+
+
 /* 関数宣言部 */
 static void input_wait_key(void);
 static void ui_draw_wait_mark(int x, int y, unsigned char color);
@@ -76,6 +87,9 @@ static int input_wait_choice_jis(const uint16_t *choice1, int choice1_len,
 static void handle_choice_block(FILE *fp);
 static int find_label_and_jump(FILE *fp, const char *label_name);
 static void trim_leading_spaces(char *str);
+static int find_flag_index(const char *name);
+static void set_flag_on(const char *name);
+static int is_flag_on(const char *name);
 
 
 
@@ -1088,6 +1102,64 @@ static int find_label_and_jump(FILE *fp, const char *label_name)
     return 0;
 }
 
+// フラグ関数
+static int find_flag_index(const char *name)
+{
+    int i;
+
+    if (name == 0 || name[0] == '\0') {
+        return -1;
+    }
+
+    for (i = 0; i < MAX_FLAGS; ++i) {
+        if (g_flags[i].name[0] == '\0') {
+            continue;
+        }
+
+        if (strcmp(g_flags[i].name, name) == 0) {
+            return i;
+        }
+    }
+
+    return -1;
+}
+
+static void set_flag_on(const char *name)
+{
+    int i;
+    int idx;
+
+    if (name == 0 || name[0] == '\0') {
+        return;
+    }
+
+    idx = find_flag_index(name);
+    if (idx >= 0) {
+        g_flags[idx].value = 1;
+        return;
+    }
+
+    for (i = 0; i < MAX_FLAGS; ++i) {
+        if (g_flags[i].name[0] == '\0') {
+            strcpy(g_flags[i].name, name);
+            g_flags[i].value = 1;
+            return;
+        }
+    }
+}
+
+static int is_flag_on(const char *name)
+{
+    int idx;
+
+    idx = find_flag_index(name);
+    if (idx >= 0) {
+        return g_flags[idx].value;
+    }
+
+    return 0;
+}
+
 // Shift_JIS 1文字 → JIS 1文字
 static uint16_t sjis_to_jis(uint8_t sjis_hi, uint8_t sjis_lo)
 {
@@ -1221,31 +1293,54 @@ static void run_script_sjis(void)
             continue;
         }
 
-        if (line[0] == '#') {
+         if (line[0] == '#') {
             char cmd[32];
             char arg1[64];
+            char arg2[64];
             int count;
 
             cmd[0] = '\0';
             arg1[0] = '\0';
+            arg2[0] = '\0';
 
-            count = sscanf(line, "%31s %63s", cmd, arg1);
+            count = sscanf(line, "%31s %63s %63s", cmd, arg1, arg2);
 
             if (strcmp(line, "#choice") == 0) {
                 handle_choice_block(fp);
                 continue;
             }
 
-            /* #label は目印なので何もしない */
             if (strcmp(cmd, "#label") == 0) {
                 continue;
             }
 
-            /* #jump label_name */
             if (strcmp(cmd, "#jump") == 0) {
                 if (count >= 2) {
-                    if (!find_label_and_jump(fp, arg1)) {
-                        /* 見つからない時は今は何もしない */
+                    find_label_and_jump(fp, arg1);
+                }
+                continue;
+            }
+
+            if (strcmp(cmd, "#set") == 0) {
+                if (count >= 2) {
+                    set_flag_on(arg1);
+                }
+                continue;
+            }
+
+            if (strcmp(cmd, "#if") == 0) {
+                if (count >= 3) {
+                    if (is_flag_on(arg1)) {
+                        find_label_and_jump(fp, arg2);
+                    }
+                }
+                continue;
+            }
+
+            if (strcmp(cmd, "#ifnot") == 0) {
+                if (count >= 3) {
+                    if (!is_flag_on(arg1)) {
+                        find_label_and_jump(fp, arg2);
                     }
                 }
                 continue;

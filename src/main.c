@@ -84,7 +84,7 @@ static void ui_draw_current_stands(enum StandId left_stand,
                                    enum FaceId right_face);
 static int input_wait_choice_jis(const uint16_t *choice1, int choice1_len,
                                  const uint16_t *choice2, int choice2_len);
-static void handle_choice_block(FILE *fp);
+static void handle_choice_block(FILE *fp, const char *label1, const char *label2);
 static int find_label_and_jump(FILE *fp, const char *label_name);
 static void trim_leading_spaces(char *str);
 static int find_flag_index(const char *name);
@@ -1305,8 +1305,10 @@ static void run_script_sjis(void)
 
             count = sscanf(line, "%31s %63s %63s", cmd, arg1, arg2);
 
-            if (strcmp(line, "#choice") == 0) {
-                handle_choice_block(fp);
+            if (strcmp(cmd, "#choice") == 0) {
+                if (count >= 3) {
+                    handle_choice_block(fp, arg1, arg2);
+                }
                 continue;
             }
 
@@ -1591,7 +1593,7 @@ static int input_wait_choice_jis(const uint16_t *choice1, int choice1_len,
 }
 
 // #choice 用の処理関数を追加
-static void handle_choice_block(FILE *fp)
+static void handle_choice_block(FILE *fp, const char *label1, const char *label2)
 {
     char line1[256];
     char line2[256];
@@ -1601,6 +1603,7 @@ static void handle_choice_block(FILE *fp)
 
     int choice1_len;
     int choice2_len;
+    int selected;
 
     if (fgets(line1, sizeof(line1), fp) == 0) {
         return;
@@ -1624,8 +1627,14 @@ static void handle_choice_block(FILE *fp)
         64
     );
 
-    input_wait_choice_jis(choice1_jis, choice1_len,
-                          choice2_jis, choice2_len);
+    selected = input_wait_choice_jis(choice1_jis, choice1_len,
+                                     choice2_jis, choice2_len);
+
+    if (selected == 1) {
+        find_label_and_jump(fp, label1);
+    } else {
+        find_label_and_jump(fp, label2);
+    }
 }
 
 int main(void)

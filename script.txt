@@ -2,14 +2,24 @@
 #left anzai normal
 #right none normal
 
-#label loop
-#if seen_mitsui second_time
-
 [安西先生]
-これは初回のセリフです。
-#set seen_mitsui
-#jump loop
+どちらへ進みますか？
 
-#label second_time
+#choice route_mitsui route_sakuragi
+三井へ進む
+桜木へ進む
+
+#label route_mitsui
+#right mitsui normal
+[三井]
+まだだ、まだ終わらんよ！
+#jump end
+
+#label route_sakuragi
+#right sakuragi happy
+[桜木]
+サンヨーは俺が倒す！
+
+#label end
 [安西先生]
-これは2回目以降のセリフです。
+では次へ進みましょう。

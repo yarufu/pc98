@@ -1,25 +1,35 @@
-#bg gym
-#left anzai normal
-#right none normal
+#left anzai normal      //左キャラ表示 anzai sakuragi
 
 [安西先生]
-どちらへ進みますか？
+あきらめたらそこで試合終了ですよ・・・？
 
-#choice route_mitsui route_sakuragi
-三井へ進む
-桜木へ進む
+#choice talk_mitsui talk_sakuragi
+三井
+桜木
 
-#label route_mitsui
+#label talk_mitsui
+#set talked_mitsui
 #right mitsui normal
+
 [三井]
-まだだ、まだ終わらんよ！
+先生・・
+
+[三井]
+安西先生・・！！
+
+[三井]
+バスケが・・したいです
+
 #jump end
 
-#label route_sakuragi
-#right sakuragi happy
+#label talk_sakuragi
+#set talked_sakuragi
+#left sakuragi normal
 [桜木]
-サンヨーは俺が倒す！
+天才ですから！
+#jump end
+
 
 #label end
 [安西先生]
-では次へ進みましょう。
+終劇

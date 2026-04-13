@@ -1273,6 +1273,13 @@ static void run_script_sjis(void)
     enum FaceId current_left_face;
     enum FaceId current_right_face;
 
+    int last_bg;
+    enum StandId last_left_stand;
+    enum StandId last_right_stand;
+    enum FaceId last_left_face;
+    enum FaceId last_right_face;
+    int scene_dirty;
+
     current_name[0] = '\0';
 
     current_bg = BG_GYM_IMAGE;
@@ -1280,6 +1287,13 @@ static void run_script_sjis(void)
     current_right_stand = STAND_NONE;
     current_left_face = FACE_NORMAL;
     current_right_face = FACE_NORMAL;
+
+    last_bg = -1;
+    last_left_stand = STAND_NONE;
+    last_right_stand = STAND_NONE;
+    last_left_face = FACE_NORMAL;
+    last_right_face = FACE_NORMAL;
+    scene_dirty = 1;
 
     fp = fopen("script.txt", "rb");
     if (fp == 0) {
@@ -1293,7 +1307,7 @@ static void run_script_sjis(void)
             continue;
         }
 
-         if (line[0] == '#') {
+        if (line[0] == '#') {
             char cmd[32];
             char arg1[64];
             char arg2[64];
@@ -1374,10 +1388,26 @@ static void run_script_sjis(void)
             128
         );
 
-        graph98_clear(0);
-        ui_draw_background(current_bg);
-        ui_draw_current_stands(current_left_stand, current_left_face,
-                               current_right_stand, current_right_face);
+        if (scene_dirty ||
+            last_bg != current_bg ||
+            last_left_stand != current_left_stand ||
+            last_left_face != current_left_face ||
+            last_right_stand != current_right_stand ||
+            last_right_face != current_right_face) {
+
+            graph98_clear(0);
+            ui_draw_background(current_bg);
+            ui_draw_current_stands(current_left_stand, current_left_face,
+                                   current_right_stand, current_right_face);
+
+            last_bg = current_bg;
+            last_left_stand = current_left_stand;
+            last_left_face = current_left_face;
+            last_right_stand = current_right_stand;
+            last_right_face = current_right_face;
+            scene_dirty = 0;
+        }
+
         ui_draw_message_jis(name_jis, name_len, text_jis, text_len);
     }
 

@@ -90,7 +90,13 @@ static void trim_leading_spaces(char *str);
 static int find_flag_index(const char *name);
 static void set_flag_on(const char *name);
 static int is_flag_on(const char *name);
-
+static void ui_restore_stand_background_rect(int x0, int y0, int x1, int y1, int bg_id);
+static void ui_refresh_left_stand_only(int bg_id,
+                                       enum StandId left_stand,
+                                       enum FaceId left_face);
+static void ui_refresh_right_stand_only(int bg_id,
+                                        enum StandId right_stand,
+                                        enum FaceId right_face);
 
 
 static void ui_draw_wait_mark(int x, int y, unsigned char color)
@@ -401,6 +407,168 @@ static void ui_draw_background_test(void)
     graph98_vline(64,  0, 399, 1);
     graph98_vline(575, 0, 399, 1);
     graph98_vline(576, 0, 399, 15);
+}
+
+static void ui_restore_stand_background_rect(int x0, int y0, int x1, int y1, int bg_id)
+{
+    /*
+     * 最小版:
+     * いまは gym/test ともに「背景全体を描く関数」しかないので、
+     * 背景画像の部分切り出しはまだしません。
+     *
+     * まずはテスト背景と同じ見た目になるよう、
+     * 立ち絵の後ろに来る範囲だけを描き直します。
+     *
+     * BG_GYM_IMAGE でも、ひとまずテスト背景の該当部分を描く最小版で進めます。
+     * もし bg001.g98 を使った本物背景で違和感が出たら、
+     * 次の段階で「背景バッファ保持」に進みます。
+     */
+
+    (void)bg_id;
+
+    /* 上部の背景領域だけ描き直す */
+    if (x0 < 64)  x0 = 64;
+    if (x1 > 575) x1 = 575;
+    if (y0 < 0)   y0 = 0;
+    if (y1 > 299) y1 = 299;
+
+    if (x0 > x1 || y0 > y1) {
+        return;
+    }
+
+    /*
+     * 背景テスト版のうち、立ち絵の背後に効く部分だけ再描画
+     */
+    /* 壁ベース */
+    if (y0 <= 55) {
+        int yy1 = y1 < 55 ? y1 : 55;
+        if (yy1 >= y0) {
+            graph98_boxfill(x0, y0, x1, yy1, 7);
+        }
+    }
+    if (y1 >= 56 && y0 <= 165) {
+        int yy0 = y0 > 56 ? y0 : 56;
+        int yy1 = y1 < 165 ? y1 : 165;
+        if (yy1 >= yy0) {
+            graph98_boxfill(x0, yy0, x1, yy1, 8);
+        }
+    }
+    if (y1 >= 166 && y0 <= 199) {
+        int yy0 = y0 > 166 ? y0 : 166;
+        int yy1 = y1 < 199 ? y1 : 199;
+        if (yy1 >= yy0) {
+            graph98_boxfill(x0, yy0, x1, yy1, 7);
+        }
+    }
+    if (y1 >= 200) {
+        int yy0 = y0 > 200 ? y0 : 200;
+        if (y1 >= yy0) {
+            graph98_boxfill(x0, yy0, x1, y1, 6);
+        }
+    }
+
+    /* 体育館の横ライン類 */
+    if (12 >= y0 && 12 <= y1) graph98_hline(x0, x1, 12, 15);
+    if (13 >= y0 && 13 <= y1) graph98_hline(x0, x1, 13, 7);
+    if (55 >= y0 && 55 <= y1) graph98_hline(x0, x1, 55, 15);
+    if (56 >= y0 && 56 <= y1) graph98_hline(x0, x1, 56, 7);
+    if (110 >= y0 && 110 <= y1) graph98_hline(x0, x1, 110, 7);
+    if (111 >= y0 && 111 <= y1) graph98_hline(x0, x1, 111, 0);
+    if (165 >= y0 && 165 <= y1) graph98_hline(x0, x1, 165, 15);
+    if (166 >= y0 && 166 <= y1) graph98_hline(x0, x1, 166, 7);
+    if (199 >= y0 && 199 <= y1) graph98_hline(x0, x1, 199, 15);
+    if (200 >= y0 && 200 <= y1) graph98_hline(x0, x1, 200, 0);
+
+    /* 柱の復元 */
+    if (!(x1 < 110 || x0 > 126)) {
+        int xx0 = x0 > 110 ? x0 : 110;
+        int xx1 = x1 < 126 ? x1 : 126;
+        int yy0 = y0 > 24 ? y0 : 24;
+        int yy1 = y1 < 199 ? y1 : 199;
+        if (xx1 >= xx0 && yy1 >= yy0) {
+            graph98_boxfill(xx0, yy0, xx1, yy1, 1);
+            if (118 >= xx0 && 118 <= xx1) graph98_vline(118, yy0, yy1, 9);
+            if (110 >= xx0 && 110 <= xx1) graph98_vline(110, yy0, yy1, 0);
+            if (126 >= xx0 && 126 <= xx1) graph98_vline(126, yy0, yy1, 15);
+        }
+    }
+
+    if (!(x1 < 236 || x0 > 252)) {
+        int xx0 = x0 > 236 ? x0 : 236;
+        int xx1 = x1 < 252 ? x1 : 252;
+        int yy0 = y0 > 24 ? y0 : 24;
+        int yy1 = y1 < 199 ? y1 : 199;
+        if (xx1 >= xx0 && yy1 >= yy0) {
+            graph98_boxfill(xx0, yy0, xx1, yy1, 1);
+            if (244 >= xx0 && 244 <= xx1) graph98_vline(244, yy0, yy1, 9);
+            if (236 >= xx0 && 236 <= xx1) graph98_vline(236, yy0, yy1, 0);
+            if (252 >= xx0 && 252 <= xx1) graph98_vline(252, yy0, yy1, 15);
+        }
+    }
+
+    if (!(x1 < 388 || x0 > 404)) {
+        int xx0 = x0 > 388 ? x0 : 388;
+        int xx1 = x1 < 404 ? x1 : 404;
+        int yy0 = y0 > 24 ? y0 : 24;
+        int yy1 = y1 < 199 ? y1 : 199;
+        if (xx1 >= xx0 && yy1 >= yy0) {
+            graph98_boxfill(xx0, yy0, xx1, yy1, 1);
+            if (396 >= xx0 && 396 <= xx1) graph98_vline(396, yy0, yy1, 9);
+            if (388 >= xx0 && 388 <= xx1) graph98_vline(388, yy0, yy1, 0);
+            if (404 >= xx0 && 404 <= xx1) graph98_vline(404, yy0, yy1, 15);
+        }
+    }
+
+    if (!(x1 < 514 || x0 > 530)) {
+        int xx0 = x0 > 514 ? x0 : 514;
+        int xx1 = x1 < 530 ? x1 : 530;
+        int yy0 = y0 > 24 ? y0 : 24;
+        int yy1 = y1 < 199 ? y1 : 199;
+        if (xx1 >= xx0 && yy1 >= yy0) {
+            graph98_boxfill(xx0, yy0, xx1, yy1, 1);
+            if (522 >= xx0 && 522 <= xx1) graph98_vline(522, yy0, yy1, 9);
+            if (514 >= xx0 && 514 <= xx1) graph98_vline(514, yy0, yy1, 0);
+            if (530 >= xx0 && 530 <= xx1) graph98_vline(530, yy0, yy1, 15);
+        }
+    }
+
+    /* 床ラインの復元 */
+    {
+        int yy;
+        for (yy = 214; yy <= 294; yy += 14) {
+            if (yy >= y0 && yy <= y1) {
+                graph98_hline(x0, x1, yy, 14);
+            }
+        }
+    }
+    {
+        int xx;
+        int yy0 = y0 > 200 ? y0 : 200;
+        int yy1 = y1 < 299 ? y1 : 299;
+        if (yy1 >= yy0) {
+            for (xx = 96; xx <= 544; xx += 48) {
+                if (xx >= x0 && xx <= x1) {
+                    graph98_vline(xx, yy0, yy1, 14);
+                }
+            }
+        }
+    }
+}
+
+static void ui_refresh_left_stand_only(int bg_id,
+                                       enum StandId left_stand,
+                                       enum FaceId left_face)
+{
+    ui_restore_stand_background_rect(60, 5, 315, 299, bg_id);
+    ui_draw_stand(left_stand, left_face, 60, 5, 0);
+}
+
+static void ui_refresh_right_stand_only(int bg_id,
+                                        enum StandId right_stand,
+                                        enum FaceId right_face)
+{
+    ui_restore_stand_background_rect(320, 5, 575, 299, bg_id);
+    ui_draw_stand(right_stand, right_face, 320, 5, 1);
 }
 
 static const char *ui_get_stand_sprite_path(enum StandId stand_id,
@@ -1280,6 +1448,11 @@ static void run_script_sjis(void)
     enum FaceId last_right_face;
     int scene_dirty;
 
+    int stand_dirty;
+    
+    
+    stand_dirty = 0;
+
     current_name[0] = '\0';
 
     current_bg = BG_GYM_IMAGE;
@@ -1362,12 +1535,36 @@ static void run_script_sjis(void)
                 continue;
             }
 
-            process_command_line(line,
-                                 &current_bg,
-                                 &current_left_stand,
-                                 &current_left_face,
-                                 &current_right_stand,
-                                 &current_right_face);
+            {
+                int old_bg;
+                enum StandId old_left_stand;
+                enum FaceId old_left_face;
+                enum StandId old_right_stand;
+                enum FaceId old_right_face;
+
+                old_bg = current_bg;
+                old_left_stand = current_left_stand;
+                old_left_face = current_left_face;
+                old_right_stand = current_right_stand;
+                old_right_face = current_right_face;
+
+                process_command_line(line,
+                                     &current_bg,
+                                     &current_left_stand,
+                                     &current_left_face,
+                                     &current_right_stand,
+                                     &current_right_face);
+
+                if (current_bg != old_bg) {
+                    scene_dirty = 1;
+                    stand_dirty = 0;
+                } else if (current_left_stand != old_left_stand ||
+                           current_left_face != old_left_face ||
+                           current_right_stand != old_right_stand ||
+                           current_right_face != old_right_face) {
+                    stand_dirty = 1;
+                }
+            }
             continue;
         }
 
@@ -1388,12 +1585,10 @@ static void run_script_sjis(void)
             128
         );
 
+        // 変化があれば全画面再描画
         if (scene_dirty ||
-            last_bg != current_bg ||
-            last_left_stand != current_left_stand ||
-            last_left_face != current_left_face ||
-            last_right_stand != current_right_stand ||
-            last_right_face != current_right_face) {
+            stand_dirty ||
+            last_bg != current_bg) {
 
             graph98_clear(0);
             ui_draw_background(current_bg);
@@ -1406,8 +1601,8 @@ static void run_script_sjis(void)
             last_right_stand = current_right_stand;
             last_right_face = current_right_face;
             scene_dirty = 0;
+            stand_dirty = 0;
         }
-
         ui_draw_message_jis(name_jis, name_len, text_jis, text_len);
     }
 

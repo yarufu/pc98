@@ -1,35 +1,29 @@
-#left anzai normal      //左キャラ表示 anzai sakuragi
+#bg gym
+#left anzai normal
+
+#set test_flag
+
+#if test_flag on_route
 
 [安西先生]
-あきらめたらそこで試合終了ですよ・・・？
+ここは通らないはずです！
 
-#choice talk_mitsui talk_sakuragi
-三井
-桜木
+#label on_route
+[安西先生]
+フラグはオンです
 
-#label talk_mitsui
-#set talked_mitsui
-#right mitsui normal
+#reset test_flag
 
-[三井]
-先生・・
+#if test_flag after_reset
 
-[三井]
-安西先生・・！！
-
-[三井]
-バスケが・・したいです
-
+[安西先生]
+リセットできました
 #jump end
 
-#label talk_sakuragi
-#set talked_sakuragi
-#left sakuragi normal
-[桜木]
-天才ですから！
-#jump end
-
+#label after_reset
+[安西先生]
+ここは通らないはずです！！
 
 #label end
 [安西先生]
-終劇
+終わりです

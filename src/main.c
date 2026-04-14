@@ -89,6 +89,7 @@ static int find_label_and_jump(FILE *fp, const char *label_name);
 static void trim_leading_spaces(char *str);
 static int find_flag_index(const char *name);
 static void set_flag_on(const char *name);
+static void set_flag_off(const char *name);
 static int is_flag_on(const char *name);
 static void ui_restore_stand_background_rect(int x0, int y0, int x1, int y1, int bg_id);
 static void ui_refresh_left_stand_only(int bg_id,
@@ -1316,6 +1317,20 @@ static void set_flag_on(const char *name)
     }
 }
 
+static void set_flag_off(const char *name)
+{
+    int idx;
+
+    if (name == 0 || name[0] == '\0') {
+        return;
+    }
+
+    idx = find_flag_index(name);
+    if (idx >= 0) {
+        g_flags[idx].value = 0;
+    }
+}
+
 static int is_flag_on(const char *name)
 {
     int idx;
@@ -1513,6 +1528,13 @@ static void run_script_sjis(void)
             if (strcmp(cmd, "#set") == 0) {
                 if (count >= 2) {
                     set_flag_on(arg1);
+                }
+                continue;
+            }
+
+            if (strcmp(cmd, "#reset") == 0) {
+                if (count >= 2) {
+                    set_flag_off(arg1);
                 }
                 continue;
             }

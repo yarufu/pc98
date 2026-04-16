@@ -13,6 +13,7 @@ enum {
 
 void graph98_init(void);
 void graph98_apply_adv_palette(void);
+int graph98_load_palette_file(const char *path);
 void graph98_pset(int x, int y, unsigned char color);
 void graph98_hline(int x0, int x1, int y, unsigned char color);
 void graph98_vline(int x, int y0, int y1, unsigned char color);
@@ -26,6 +27,8 @@ void graph98_draw_digit(int x, int y, int digit, unsigned char color);
 void graph98_draw_number(int x, int y, int value, unsigned char color);
 void graph98_draw_char(int x, int y, char ch, unsigned char color);
 void graph98_draw_string(int x, int y, const char *str, unsigned char color);
+
+
 
 #ifdef __cplusplus
 }

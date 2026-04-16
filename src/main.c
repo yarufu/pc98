@@ -1888,8 +1888,13 @@ int main(void)
 {
     text98_clear_screen();
     text98_hide_cursor();
+
     graph98_init();
-    graph98_apply_adv_palette();
+
+    if (!graph98_load_palette_file("adv.pal")) {
+        graph98_apply_adv_palette();
+    }
+
     graph98_clear(0);
 
     run_script_sjis();

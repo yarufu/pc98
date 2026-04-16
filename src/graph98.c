@@ -141,6 +141,47 @@ static void graph98_set_palette_rgb8(uint8_t index,
     graph98_out8(GRAPH98_PORT_PALETTE_B, graph98_rgb8_to_4bit(b));
 }
 
+int graph98_load_palette_file(const char *path)
+{
+    FILE *fp;
+    int i;
+
+    fp = fopen(path, "r");
+    if (fp == 0) {
+        return 0;
+    }
+
+    for (i = 0; i < 16; ++i) {
+        int r;
+        int g;
+        int b;
+
+        /*
+         * 1行に「R G B」の3つの整数を書く形式です。
+         * 例:
+         * 255 255 255
+         */
+        if (fscanf(fp, "%d %d %d", &r, &g, &b) != 3) {
+            fclose(fp);
+            return 0;
+        }
+
+        if (r < 0)   r = 0;
+        if (r > 255) r = 255;
+        if (g < 0)   g = 0;
+        if (g > 255) g = 255;
+        if (b < 0)   b = 0;
+        if (b > 255) b = 255;
+
+        graph98_set_palette_rgb8((uint8_t)i,
+                                 (uint8_t)r,
+                                 (uint8_t)g,
+                                 (uint8_t)b);
+    }
+
+    fclose(fp);
+    return 1;
+}
 
 void graph98_apply_adv_palette(void)
 {

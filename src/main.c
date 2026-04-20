@@ -1557,6 +1557,28 @@ static void run_script_sjis(void)
                 continue;
             }
 
+            if (strcmp(cmd, "#pal") == 0) {
+                if (count >= 2) {
+                    // printfを使いと.COMの容量オーバーになるのでprintデバックは今使わない
+                    // printf("[PAL] load: %s\n", arg1);
+
+                    if (graph98_load_palette_file(arg1)) {
+                        // printfを使いと.COMの容量オーバーになるのでprintデバックは今使わない
+                        // printf("[PAL] success\n");
+                        scene_dirty = 1;
+                    } else {
+                        // printfを使いと.COMの容量オーバーになるのでprintデバックは今使わない
+                        // printf("[PAL] FAILED\n");
+                    }
+                } else {
+                    // printfを使いと.COMの容量オーバーになるのでprintデバックは今使わないZ
+                    // printf("[PAL] invalid args\n");
+                }
+                continue;
+            }
+
+
+
             {
                 int old_bg;
                 enum StandId old_left_stand;

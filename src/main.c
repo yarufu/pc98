@@ -12,6 +12,15 @@
 #define CG_MODE_CODE_ACCESS 0x0A
 #define CG_MODE_DOT_ACCESS  0x0B
 
+// キャラの位置調整
+#define STAND_LEFT_X   60
+#define STAND_RIGHT_X  320
+#define STAND_Y        9
+
+#define STAND_W        256
+#define STAND_H        290
+
+
 struct Message;
 
 enum BackgroundId {
@@ -556,20 +565,29 @@ static void ui_restore_stand_background_rect(int x0, int y0, int x1, int y1, int
     }
 }
 
+
 static void ui_refresh_left_stand_only(int bg_id,
                                        enum StandId left_stand,
                                        enum FaceId left_face)
 {
-    ui_restore_stand_background_rect(60, 5, 315, 299, bg_id);
-    ui_draw_stand(left_stand, left_face, 60, 5, 0);
+    ui_restore_stand_background_rect(STAND_LEFT_X,
+                                     STAND_Y,
+                                     STAND_LEFT_X + STAND_W - 1,
+                                     STAND_Y + STAND_H - 1,
+                                     bg_id);
+    ui_draw_stand(left_stand, left_face, STAND_LEFT_X, STAND_Y, 0);
 }
 
 static void ui_refresh_right_stand_only(int bg_id,
                                         enum StandId right_stand,
                                         enum FaceId right_face)
 {
-    ui_restore_stand_background_rect(320, 5, 575, 299, bg_id);
-    ui_draw_stand(right_stand, right_face, 320, 5, 1);
+    ui_restore_stand_background_rect(STAND_RIGHT_X,
+                                     STAND_Y,
+                                     STAND_RIGHT_X + STAND_W - 1,
+                                     STAND_Y + STAND_H - 1,
+                                     bg_id);
+    ui_draw_stand(right_stand, right_face, STAND_RIGHT_X, STAND_Y, 1);
 }
 
 static const char *ui_get_stand_sprite_path(enum StandId stand_id,
@@ -669,8 +687,8 @@ static void ui_draw_stands_for_message(const struct Message *msg)
         return;
     }
 
-    ui_draw_stand(msg->left_stand,  msg->left_face,  60, 5, 0);
-    ui_draw_stand(msg->right_stand, msg->right_face, 320, 5, 1);
+    ui_draw_stand(msg->left_stand,  msg->left_face,  STAND_LEFT_X,  STAND_Y, 0);
+    ui_draw_stand(msg->right_stand, msg->right_face, STAND_RIGHT_X, STAND_Y, 1);
 }
 
 static int ui_draw_message_page_jis(const uint16_t *name, int name_len,
@@ -1692,7 +1710,7 @@ static void run_script_ascii(void)
         ui_draw_background(BG_GYM_IMAGE);
 
         /* ここはとりあえず固定立ち絵でもOK */
-        ui_draw_stand(STAND_ANZAI, FACE_NORMAL, 60, 5, 0);
+        ui_draw_stand(STAND_ANZAI, FACE_NORMAL, 60, STAND_Y, 0);
 
         ui_draw_message_ascii(current_name, line);
 
@@ -1812,8 +1830,8 @@ static void ui_draw_current_stands(enum StandId left_stand,
                                    enum StandId right_stand,
                                    enum FaceId right_face)
 {
-    ui_draw_stand(left_stand, left_face, 60, 5, 0);
-    ui_draw_stand(right_stand, right_face, 320, 5, 1);
+    ui_draw_stand(left_stand, left_face, STAND_LEFT_X, STAND_Y, 0);
+    ui_draw_stand(right_stand, right_face, STAND_RIGHT_X, STAND_Y, 1);
 }
 
 

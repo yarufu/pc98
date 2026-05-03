@@ -775,7 +775,7 @@ static int ui_draw_message_page_jis(const uint16_t *name, int name_len,
         line3_count = message_line_chars;
     }
 
-    text_x = 112;
+    text_x = 124;
 
     if (name != 0 && name_draw_count > 0) {
         get_kanji_font(jis_left_bracket, bracket_font0);
@@ -789,9 +789,9 @@ static int ui_draw_message_page_jis(const uint16_t *name, int name_len,
         get_kanji_font(jis_right_bracket, bracket_font1);
         name_text[name_draw_count + 1] = bracket_font1;
 
-        draw_string_kanji(112, message_line1_y, name_text, name_draw_count + 2);
+        draw_string_kanji(116, message_line1_y, name_text, name_draw_count + 2);
 
-        text_x = 112 + (name_draw_count + 2) * 16 + 8;
+        text_x = 116 + (name_draw_count + 2) * 16 + 8;
     }
 
     for (i = 0; i < line1_count; ++i) {
@@ -808,10 +808,10 @@ static int ui_draw_message_page_jis(const uint16_t *name, int name_len,
         draw_string_kanji(text_x, message_line1_y, line1, line1_count);
     }
     if (line2_count > 0) {
-        draw_string_kanji(112, message_line2_y, line2, line2_count);
+        draw_string_kanji(116, message_line2_y, line2, line2_count);
     }
     if (line3_count > 0) {
-        draw_string_kanji(112, message_line3_y, line3, line3_count);
+        draw_string_kanji(116, message_line3_y, line3, line3_count);
     }
 
 
@@ -1208,12 +1208,12 @@ static void ui_draw_message_ascii(const char *name, const char *text)
     ui_draw_message_window();
 
     if (name != 0) {
-        graph98_draw_string(113, 321, "[", 1);
-        graph98_draw_string(121, 321, name, 1);
-        graph98_draw_string(121 + strlen(name) * 6, 321, "]", 1);
+        graph98_draw_string(105, 321, "[", 1);
+        graph98_draw_string(113, 321, name, 1);
+        graph98_draw_string(113 + strlen(name) * 6, 321, "]", 1);
     }
 
-    graph98_draw_string(113, 345, text, 1);
+    graph98_draw_string(105, 345, text, 1);
 
     /* 続きアイコンは非表示 */
     // ui_draw_wait_mark(528, 368, 15);

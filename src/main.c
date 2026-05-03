@@ -244,7 +244,9 @@ static void ui_draw_message_window(void)
 
     /* 内側（26文字幅 + 左右空白1文字ぶんを想定） */
     // graph98_boxfill(96, 313, 543, 386, 0);
-    graph98_boxfill(91, 313, 543, 384, 0);
+    // graph98_boxfill(92, 313, 544, 392, 0); 26文字メッセージ枠
+    // graph98_boxfill(92, 313, 516, 392, 0);
+    graph98_boxfill(109, 313, 531, 392, 0);
     // graph98_rect(96, 308, 543, 381, 8);
 }
 
@@ -697,7 +699,7 @@ static int ui_draw_message_page_jis(const uint16_t *name, int name_len,
 {
     static const uint16_t jis_left_bracket = 0x215A;   /* 【 */
     static const uint16_t jis_right_bracket = 0x215B;  /* 】 */
-    static const int message_line_chars = 26;
+    static const int message_line_chars = 25;
     static const int message_max_lines = 3;
     //static const int message_line1_y = 323;
     //static const int message_line2_y = 347;
@@ -812,7 +814,10 @@ static int ui_draw_message_page_jis(const uint16_t *name, int name_len,
         draw_string_kanji(112, message_line3_y, line3, line3_count);
     }
 
-    ui_draw_wait_mark(528, 368, 15);
+
+    /* 続きアイコンは非表示 */
+     // ui_draw_wait_mark(528, 368, 15);
+
     return line1_count + line2_count + line3_count;
 }
 
@@ -1203,14 +1208,15 @@ static void ui_draw_message_ascii(const char *name, const char *text)
     ui_draw_message_window();
 
     if (name != 0) {
-        graph98_draw_string(112, 321, "[", 1);
-        graph98_draw_string(120, 321, name, 1);
-        graph98_draw_string(120 + strlen(name) * 6, 321, "]", 1);
+        graph98_draw_string(113, 321, "[", 1);
+        graph98_draw_string(121, 321, name, 1);
+        graph98_draw_string(121 + strlen(name) * 6, 321, "]", 1);
     }
 
-    graph98_draw_string(112, 345, text, 1);
+    graph98_draw_string(113, 345, text, 1);
 
-    ui_draw_wait_mark(528, 368, 15);
+    /* 続きアイコンは非表示 */
+    // ui_draw_wait_mark(528, 368, 15);
 }
 
 // 改行削除関数

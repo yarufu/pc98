@@ -24,8 +24,10 @@
 struct Message;
 
 enum BackgroundId {
-    BG_TEST = 0,
-    BG_GYM_IMAGE
+    BG_NONE = 0,
+    BG_01,
+    BG_02,
+    BG_03
 };
 
 enum StandId {
@@ -61,7 +63,7 @@ static void text98_clear_screen(void);
 static int input_wait_choice_cursor(const struct Message *msg);
 static void io_out8(uint16_t port, uint8_t value);
 static void get_kanji_font(uint16_t jis_code, unsigned char *buffer);
-static void ui_draw_background(int bg_id);
+static void ui_draw_background(enum BackgroundId bg_id);
 static void ui_draw_message_window(void);
 static void ui_draw_background_test(void);
 static const char *ui_get_stand_sprite_path(enum StandId stand_id,
@@ -78,11 +80,12 @@ static int ui_draw_message_page_jis(const uint16_t *name, int name_len,
                                     int start_index);
 static void ui_draw_message_jis(const uint16_t *name, int name_len,
                                 const uint16_t *jis_codes, int count);
-static int parse_bg_id(const char *name);
+static enum BackgroundId parse_bg_id(const char *name);
+static const char *get_bg_path(enum BackgroundId bg_id);
 static enum StandId parse_stand_id(const char *name);
 static enum FaceId parse_face_id(const char *name);
 static void process_command_line(const char *line,
-                                 int *bg_id,
+                                 enum BackgroundId *bg_id,
                                  enum StandId *left_stand,
                                  enum FaceId *left_face,
                                  enum StandId *right_stand,
@@ -250,10 +253,14 @@ static void ui_draw_message_window(void)
     // graph98_rect(96, 308, 543, 381, 8);
 }
 
-static void ui_draw_background(int bg_id)
+static void ui_draw_background(enum BackgroundId bg_id)
 {
-    if (bg_id == BG_GYM_IMAGE) {
-        if (graph98_load_g98("bg001.g98")) {
+    const char *path;
+
+    path = get_bg_path(bg_id);
+
+    if (path != 0) {
+        if (graph98_load_g98(path)) {
             return;
         }
     }
@@ -1116,7 +1123,7 @@ static int input_wait_choice_cursor(const struct Message *msg)
 
     for (;;) {
         graph98_clear(0);
-        ui_draw_background(BG_GYM_IMAGE);
+        ui_draw_background(BG_01);
         ui_draw_stands_for_message(msg);
         ui_draw_choice_jis(msg->choice1, msg->choice1_len,
                            msg->choice2, msg->choice2_len,
@@ -1470,13 +1477,13 @@ static void run_script_sjis(void)
     int name_len;
     int text_len;
 
-    int current_bg;
+    enum BackgroundId current_bg;
     enum StandId current_left_stand;
     enum StandId current_right_stand;
     enum FaceId current_left_face;
     enum FaceId current_right_face;
 
-    int last_bg;
+    enum BackgroundId last_bg;
     enum StandId last_left_stand;
     enum StandId last_right_stand;
     enum FaceId last_left_face;
@@ -1490,13 +1497,13 @@ static void run_script_sjis(void)
 
     current_name[0] = '\0';
 
-    current_bg = BG_GYM_IMAGE;
+    current_bg = BG_01;
     current_left_stand = STAND_NONE;
     current_right_stand = STAND_NONE;
     current_left_face = FACE_NORMAL;
     current_right_face = FACE_NORMAL;
 
-    last_bg = -1;
+    last_bg = BG_NONE;
     last_left_stand = STAND_NONE;
     last_right_stand = STAND_NONE;
     last_left_face = FACE_NORMAL;
@@ -1600,7 +1607,7 @@ static void run_script_sjis(void)
 
 
             {
-                int old_bg;
+                enum BackgroundId old_bg;
                 enum StandId old_left_stand;
                 enum FaceId old_left_face;
                 enum StandId old_right_stand;
@@ -1709,7 +1716,7 @@ static void run_script_ascii(void)
 
         /* セリフ表示 */
         graph98_clear(0);
-        ui_draw_background(BG_GYM_IMAGE);
+        ui_draw_background(BG_01);
 
         /* ここはとりあえず固定立ち絵でもOK */
         ui_draw_stand(STAND_CHARACTER01, FACE_NORMAL, 60, STAND_Y, 0);
@@ -1724,17 +1731,32 @@ static void run_script_ascii(void)
 
 
 // 文字列を背景IDへ
-static int parse_bg_id(const char *name)
+static enum BackgroundId parse_bg_id(const char *name)
 {
+    if (strcmp(name, "bg01") == 0) {
+        return BG_01;
+    }
+    if (strcmp(name, "bg02") == 0) {
+        return BG_02;
+    }
+    if (strcmp(name, "bg03") == 0) {
+        return BG_03;
+    }
+
+    /* 旧スクリプト互換 */
+    /*
     if (strcmp(name, "gym") == 0) {
-        return BG_GYM_IMAGE;
+        return BG_01;
     }
-
+    if (strcmp(name, "classroom") == 0) {
+        return BG_02;
+    }
     if (strcmp(name, "test") == 0) {
-        return BG_TEST;
+        return BG_NONE;
     }
+    */
 
-    return BG_TEST;
+    return BG_NONE;
 }
 
 // 文字列を立ち絵IDへ
@@ -1786,9 +1808,25 @@ static enum FaceId parse_face_id(const char *name)
     return FACE_NORMAL;
 }
 
+// 背景ファイル取得関数
+static const char *get_bg_path(enum BackgroundId bg_id)
+{
+    if (bg_id == BG_01) {
+        return "bg001.g98";
+    }
+    if (bg_id == BG_02) {
+        return "bg002.g98";
+    }
+    if (bg_id == BG_03) {
+        return "bg003.g98";
+    }
+
+    return 0;
+}
+
 // コマンド行を読む関数
 static void process_command_line(const char *line,
-                                 int *bg_id,
+                                 enum BackgroundId *bg_id,
                                  enum StandId *left_stand,
                                  enum FaceId *left_face,
                                  enum StandId *right_stand,

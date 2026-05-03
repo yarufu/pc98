@@ -60,7 +60,8 @@ static void input_wait_key(void);
 static void ui_draw_wait_mark(int x, int y, unsigned char color);
 static void text98_hide_cursor(void);
 static void text98_clear_screen(void);
-static int input_wait_choice_cursor(const struct Message *msg);
+static int input_wait_choice_cursor(const struct Message *msg,
+                                    enum BackgroundId current_bg);
 static void io_out8(uint16_t port, uint8_t value);
 static void get_kanji_font(uint16_t jis_code, unsigned char *buffer);
 static void ui_draw_background(enum BackgroundId bg_id);
@@ -1113,8 +1114,13 @@ static void input_wait_key(void)
  *
  * 今回の選択肢は 2 個だけなので、
  * それ以外のキーは無視して待ち続けます。
+ * 
+ * 注意！　これは古い関数で使われていません！
+ * 　input_wait_choice_jis
+ * を使用しています。
  */
-static int input_wait_choice_cursor(const struct Message *msg)
+static int input_wait_choice_cursor(const struct Message *msg,
+                                    enum BackgroundId current_bg)
 {
     uint8_t ch;
     int selected;
@@ -1123,7 +1129,7 @@ static int input_wait_choice_cursor(const struct Message *msg)
 
     for (;;) {
         graph98_clear(0);
-        ui_draw_background(BG_01);
+        ui_draw_background(current_bg);
         ui_draw_stands_for_message(msg);
         ui_draw_choice_jis(msg->choice1, msg->choice1_len,
                            msg->choice2, msg->choice2_len,

@@ -30,9 +30,9 @@ enum BackgroundId {
 
 enum StandId {
     STAND_NONE = 0,
-    STAND_ANZAI,
-    STAND_MITSUI,
-    STAND_SAKURAGI
+    STAND_CHARACTER01,
+    STAND_CHARACTER02,
+    STAND_CHARACTER03
 };
 
 enum FaceId {
@@ -596,52 +596,45 @@ static const char *ui_get_stand_sprite_path(enum StandId stand_id,
                                             enum FaceId face_id,
                                             int facing_left)
 {
-    /*
-     * 立ち絵と表情の対応表です。
-     * 画像を差し替えたいときは、この関数の戻り値だけ直せば済みます。
-     *
-     * facing_left は将来、左右で別画像を使いたくなったときのために
-     * 引数として残しています。今は同じ画像をそのまま使います。
-     */
     (void)facing_left;
 
-    if (stand_id == STAND_ANZAI) {
+    if (stand_id == STAND_CHARACTER01) {
         if (face_id == FACE_HAPPY) {
-            return "stand_anzai_happy.spr";
+            return "c01_h.spr";
         }
         if (face_id == FACE_ANGRY) {
-            return "stand_anzai_angry.spr";
+            return "c01_a.spr";
         }
         if (face_id == FACE_SURPRISED) {
-            return "stand_anzai_surprised.spr";
+            return "c01_s.spr";
         }
-        return "stand_anzai_normal.spr";
+        return "c01_n.spr";
     }
 
-    if (stand_id == STAND_MITSUI) {
+    if (stand_id == STAND_CHARACTER02) {
         if (face_id == FACE_HAPPY) {
-            return "stand_mitsui_happy.spr";
+            return "c02_h.spr";
         }
         if (face_id == FACE_ANGRY) {
-            return "stand_mitsui_angry.spr";
+            return "c02_a.spr";
         }
         if (face_id == FACE_SURPRISED) {
-            return "stand_mitsui_surprised.spr";
+            return "c02_s.spr";
         }
-        return "stand_mitsui_normal.spr";
+        return "c02_n.spr";
     }
 
-    if (stand_id == STAND_SAKURAGI) {
+    if (stand_id == STAND_CHARACTER03) {
         if (face_id == FACE_HAPPY) {
-            return "stand_sakuragi_happy.spr";
+            return "c03_h.spr";
         }
         if (face_id == FACE_ANGRY) {
-            return "stand_sakuragi_angry.spr";
+            return "c03_a.spr";
         }
         if (face_id == FACE_SURPRISED) {
-            return "stand_sakuragi_surprised.spr";
+            return "c03_s.spr";
         }
-        return "stand_sakuragi_normal.spr";
+        return "c03_n.spr";
     }
 
     return 0;
@@ -679,7 +672,10 @@ static void ui_draw_stand(enum StandId stand_id, enum FaceId face_id,
     }
 
     if (!graph98_draw_sprite_file_trans(sprite_path, x, y, 0)) {
-        ui_draw_stand_placeholder(x, y);
+        // ui_draw_stand_placeholder(x, y);
+        graph98_boxfill(x + 20, y + 20, x + 180, y + 80, 4);
+        graph98_draw_string(x + 30, y + 45, "SPRITE LOAD NG", 15);
+
     }
 }
 
@@ -1716,7 +1712,7 @@ static void run_script_ascii(void)
         ui_draw_background(BG_GYM_IMAGE);
 
         /* ここはとりあえず固定立ち絵でもOK */
-        ui_draw_stand(STAND_ANZAI, FACE_NORMAL, 60, STAND_Y, 0);
+        ui_draw_stand(STAND_CHARACTER01, FACE_NORMAL, 60, STAND_Y, 0);
 
         ui_draw_message_ascii(current_name, line);
 
@@ -1747,15 +1743,29 @@ static enum StandId parse_stand_id(const char *name)
     if (strcmp(name, "none") == 0) {
         return STAND_NONE;
     }
+
+    if (strcmp(name, "character01") == 0) {
+        return STAND_CHARACTER01;
+    }
+    if (strcmp(name, "character02") == 0) {
+        return STAND_CHARACTER02;
+    }
+    if (strcmp(name, "character03") == 0) {
+        return STAND_CHARACTER03;
+    }
+
+    /* 古いスクリプト用の別名。不要なら後で消してOK */
+    /*
     if (strcmp(name, "anzai") == 0) {
-        return STAND_ANZAI;
+        return STAND_CHARACTER01;
     }
     if (strcmp(name, "mitsui") == 0) {
-        return STAND_MITSUI;
+        return STAND_CHARACTER02;
     }
     if (strcmp(name, "sakuragi") == 0) {
-        return STAND_SAKURAGI;
+        return STAND_CHARACTER03;
     }
+    */
 
     return STAND_NONE;
 }

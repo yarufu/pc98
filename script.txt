@@ -1,4 +1,5 @@
-#right mitsui normal     //右キャラ表示 anzai sakuragi
+#bg gym
+#right character03 normal
 
 [健一]
 ここ、静かだな

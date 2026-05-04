@@ -912,14 +912,17 @@ static void ui_draw_choice_jis(const uint16_t *choice1, int choice1_len,
      * 選択中の行にだけ三角カーソルを表示します。
      * 今回は 2 択だけなので、
      * selected が 1 か 2 かだけ見れば十分です。
+     * 
+     * 現在カーソルは表示しない
      */
+     /*
     if (selected == 1) {
         ui_draw_cursor_triangle(choice_cursor_x, choice_line1_y + 4, 15);
     }
     if (selected == 2) {
         ui_draw_cursor_triangle(choice_cursor_x, choice_line2_y + 4, 15);
     }
-
+    */
 
     draw_count1 = choice1_len;
     if (draw_count1 > 8) {

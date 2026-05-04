@@ -865,8 +865,8 @@ static void ui_draw_choice_jis(const uint16_t *choice1, int choice1_len,
                                const uint16_t *choice2, int choice2_len,
                                int selected)
 {
-    static const int choice_line1_y = 318;
-    static const int choice_line2_y = 342;
+    static const int choice_line1_y = 317;
+    static const int choice_line2_y = 339;
     static const int choice_text_x = 160;
     static const int choice_cursor_x = 128;
 
@@ -900,14 +900,12 @@ static void ui_draw_choice_jis(const uint16_t *choice1, int choice1_len,
     ui_draw_message_window();
 
 
-
-
     /* 選択中の行に帯を描く */
     if (selected == 1) {
-        graph98_boxfill(140, 312, 360, 332, 15);
+        graph98_boxfill(140, 313, 500, 332, 15);
     }
     if (selected == 2) {
-        graph98_boxfill(140, 336, 360, 356, 15);
+        graph98_boxfill(140, 337, 500, 354, 15);
     }
 
     /*

@@ -1,4 +1,5 @@
 #include "graph98.h"
+#include "fm86.h"
 
 #include <stdint.h>
 #include <stdio.h>
@@ -1611,6 +1612,15 @@ static void run_script_sjis(void)
                 continue;
             }
 
+            if (strcmp(cmd, "#se") == 0) {
+                if (count >= 2) {
+                    if (strcmp(arg1, "beep") == 0) {
+                        se86_play_beep();
+                    }
+                }
+                continue;
+            }
+
 
 
             {
@@ -1991,6 +2001,7 @@ int main(void)
     text98_hide_cursor();
 
     graph98_init();
+    se86_init();
 
     if (!graph98_load_palette_file("adv.pal")) {
         graph98_apply_adv_palette();

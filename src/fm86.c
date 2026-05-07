@@ -4,7 +4,7 @@
 
 #define FM86_ADDR0 0x188
 #define FM86_DATA0 0x18A
-#define GDC_MASTER_STATUS 0x0060
+#define GDC_MASTER_STATUS 0x00A0
 #define GDC_STATUS_VSYNC 0x20
 
 static int g_se86_initialized = 0;
@@ -50,18 +50,6 @@ static void fm86_write(uint8_t reg, uint8_t value)
     io_out8(FM86_DATA0, value);
     fm86_wait_busy();
 }
-
-/* 怪しい
-static void wait_vsync(void)
-{
-    while ((io_in8(GDC_MASTER_STATUS) & GDC_STATUS_VSYNC) != 0u) {
-    }
-
-    while ((io_in8(GDC_MASTER_STATUS) & GDC_STATUS_VSYNC) == 0u) {
-    }
-}
-*/
-
 
 static void wait_vsync(void)
 {

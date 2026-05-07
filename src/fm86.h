@@ -7,6 +7,7 @@ extern "C" {
 
 void se86_init(void);
 void se86_play_beep(void);
+void se86_play_beep2(void);
 
 #ifdef __cplusplus
 }

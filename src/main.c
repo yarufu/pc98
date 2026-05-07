@@ -1616,10 +1616,14 @@ static void run_script_sjis(void)
                 if (count >= 2) {
                     if (strcmp(arg1, "beep") == 0) {
                         se86_play_beep();
+                    } else if (strcmp(arg1, "beep2") == 0) {
+                        se86_play_beep2();
                     }
                 }
                 continue;
             }
+
+
 
 
 

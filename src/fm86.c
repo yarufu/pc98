@@ -120,6 +120,28 @@ void se86_play_beep(void)
     }
 
     fm86_write(0x28, 0x00);
+
+    /* beep1: 低め */
+    fm86_write(0xA4, 0x22);
+    fm86_write(0xA0, 0x69);
+
+    fm86_write(0x28, 0xF0);
+    wait_frames(4);
+    fm86_write(0x28, 0x00);
+}
+
+void se86_play_beep2(void)
+{
+    if (!g_se86_initialized) {
+        se86_init();
+    }
+
+    fm86_write(0x28, 0x00);
+
+    /* beep2: 少し高め */
+    fm86_write(0xA4, 0x24);
+    fm86_write(0xA0, 0x30);
+
     fm86_write(0x28, 0xF0);
     wait_frames(4);
     fm86_write(0x28, 0x00);

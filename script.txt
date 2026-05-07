@@ -1,19 +1,21 @@
 #bg bg01
 #right character01 normal
 
-[美緒]
-テスト開始
-
-#se beep
-
 [健一]
-音が鳴った？
+まず低い音。
 
 #se beep
+
+[美緒]
+次は少し高い音。
+
+#se beep2
 
 []
-連続再生テスト
+連続テスト。
 
 #se beep
+#se beep2
 #se beep
-#se beep
+#se beep2
+

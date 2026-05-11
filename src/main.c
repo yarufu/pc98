@@ -1,5 +1,6 @@
 #include "graph98.h"
 #include "fm86.h"
+#include "pmd.h"
 
 #include <stdint.h>
 #include <stdio.h>
@@ -2003,6 +2004,8 @@ int main(void)
 {
     text98_clear_screen();
     text98_hide_cursor();
+
+    (void)pmd_is_resident();
 
     graph98_init();
     se86_init();

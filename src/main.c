@@ -2022,6 +2022,10 @@ int main(void)
 
     g_pmd_available = pmd_is_resident();
 
+    if (!g_pmd_available) {
+        return 1;
+    }
+
     graph98_init();
     se86_init();
 

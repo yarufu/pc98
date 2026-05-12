@@ -1,21 +1,10 @@
 #bg bg01
 #right character01 normal
 
-[健一]
-まず低い音。
+[]
+BGM停止テストです。
 
-#se beep
-
-[美緒]
-次は少し高い音。
-
-#se beep2
+#bgmstop
 
 []
-連続テスト。
-
-#se beep
-#se beep2
-#se beep
-#se beep2
-
+ここでBGMが止まれば成功です。

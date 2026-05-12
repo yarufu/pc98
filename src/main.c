@@ -54,6 +54,7 @@ typedef struct {
 #define MAX_FLAGS 16
 
 static GameFlag g_flags[MAX_FLAGS];
+static int g_pmd_available = 0;
 
 
 
@@ -1624,6 +1625,13 @@ static void run_script_sjis(void)
                 continue;
             }
 
+            if (strcmp(cmd, "#bgmstop") == 0) {
+                if (g_pmd_available) {
+                    pmd_stop_music();
+                }
+                continue;
+            }
+
 
 
 
@@ -2005,7 +2013,7 @@ int main(void)
     text98_clear_screen();
     text98_hide_cursor();
 
-    (void)pmd_is_resident();
+    g_pmd_available = pmd_is_resident();
 
     graph98_init();
     se86_init();

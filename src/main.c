@@ -1625,13 +1625,6 @@ static void run_script_sjis(void)
                 continue;
             }
 
-            if (strcmp(cmd, "#bgmstop") == 0) {
-                if (g_pmd_available) {
-                    pmd_stop_music();
-                }
-                continue;
-            }
-
             if (strcmp(cmd, "#bgmstart") == 0) {
                 if (g_pmd_available) {
                     pmd_start_music();
@@ -1639,9 +1632,19 @@ static void run_script_sjis(void)
                 continue;
             }
 
+            if (strcmp(cmd, "#bgmstop") == 0) {
+                if (g_pmd_available) {
+                    pmd_stop_music();
+                }
+                continue;
+            }
 
-
-
+            if (strcmp(cmd, "#bgmfade") == 0) {
+                if (g_pmd_available) {
+                    pmd_fadeout_music();
+                }
+                continue;
+            }
 
             {
                 enum BackgroundId old_bg;

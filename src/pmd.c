@@ -49,3 +49,14 @@ void pmd_stop_music(void)
         :
         : "ax", "cc", "memory");
 }
+
+void pmd_fadeout_music(void)
+{
+    __asm__ __volatile__(
+        "movw $0x0208, %%ax\n\t"
+        "int $0x60"
+        :
+        :
+        : "ax", "cc", "memory");
+}
+

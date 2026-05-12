@@ -2,11 +2,12 @@
 #right character01 normal
 
 []
-BGMを止めます。
+ＢＧＭをフェードアウトします。
+#bgmfade
 
-#bgmstop
+[健一]
+テスト
 
-[]
-BGMを再開します。
+[美緒]
+テスト２
 
-#bgmstart

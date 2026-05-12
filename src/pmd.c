@@ -30,6 +30,16 @@ int pmd_is_resident(void)
     return 1;
 }
 
+void pmd_start_music(void)
+{
+    __asm__ __volatile__(
+        "movb $0x00, %%ah\n\t"
+        "int $0x60"
+        :
+        :
+        : "ax", "cc", "memory");
+}
+
 void pmd_stop_music(void)
 {
     __asm__ __volatile__(

@@ -1632,6 +1632,13 @@ static void run_script_sjis(void)
                 continue;
             }
 
+            if (strcmp(cmd, "#bgmstart") == 0) {
+                if (g_pmd_available) {
+                    pmd_start_music();
+                }
+                continue;
+            }
+
 
 
 

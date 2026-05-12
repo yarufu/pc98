@@ -2,9 +2,11 @@
 #right character01 normal
 
 []
-BGM停止テストです。
+BGMを止めます。
 
 #bgmstop
 
 []
-ここでBGMが止まれば成功です。
+BGMを再開します。
+
+#bgmstart

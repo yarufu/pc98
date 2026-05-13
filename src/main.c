@@ -1625,6 +1625,19 @@ static void run_script_sjis(void)
                 continue;
             }
 
+            if (strcmp(cmd, "#bgm") == 0) {
+                if (count >= 2) {
+                    if (g_pmd_available) {
+                        pmd_stop_music();
+
+                        if (pmd_load_music_file(arg1)) {
+                            pmd_start_music();
+                        }
+                    }
+                }
+                continue;
+            }
+
             if (strcmp(cmd, "#bgmstart") == 0) {
                 if (g_pmd_available) {
                     pmd_start_music();

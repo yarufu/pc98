@@ -2,8 +2,8 @@
 #right character01 normal
 
 []
-ＢＧＭをフェードアウトします。
-#bgmfade
+ＢＧＭを出力します。
+#bgm opening.m
 
 [健一]
 テスト

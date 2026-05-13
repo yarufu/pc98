@@ -1,5 +1,5 @@
 CC = ia16-elf-gcc
-CFLAGS = -O2 -mcmodel=tiny -march=v30
+CFLAGS = -O2 -mcmodel=small -march=v30
 
 TARGET = build/test.exe
 SRCS = src/graph98.c src/fm86.c src/pmd.c src/main.c

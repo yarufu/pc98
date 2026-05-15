@@ -2033,14 +2033,19 @@ static void handle_choice_block(FILE *fp, const char *label1, const char *label2
 
 int main(void)
 {
-    text98_clear_screen();
-    text98_hide_cursor();
 
     g_pmd_available = pmd_is_resident();
 
     if (!g_pmd_available) {
+        puts("PMD.COM is not resident.");
+        puts("Please run PMD.COM before ADV98.EXE.");
         return 1;
+        
     }
+
+
+    text98_clear_screen();
+    text98_hide_cursor();
 
     graph98_init();
     se86_init();

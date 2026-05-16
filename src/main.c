@@ -1,6 +1,8 @@
 #include "graph98.h"
 #include "fm86.h"
 #include "pmd.h"
+#include "mouse98.h"
+
 
 #include <stdint.h>
 #include <stdio.h>
@@ -138,9 +140,6 @@ static int get_flag_value(const char *name);
 static void debug_log(const char *fmt, ...);
 
 // マウス関連
-static int mouse_init(void);
-static int mouse_left_pressed(void);
-static void mouse_wait_left_release(void);
 static int input_key_available(void);
 static uint8_t input_read_key(void);
 
@@ -1001,8 +1000,8 @@ static void input_wait_key(void)
     uint8_t ch;
 
     for (;;) {
-        if (mouse_left_pressed()) {
-            mouse_wait_left_release();
+        if (mouse98_left_pressed()) {
+            mouse98_wait_left_release();
             break;
         }
 
@@ -1018,48 +1017,7 @@ static void input_wait_key(void)
     }
 }
 
-
-// マウス関連
-static int mouse_init(void)
-{
-    uint16_t ax;
-
-    __asm__ __volatile__(
-        "xorw %%ax, %%ax\n\t"
-        "int $0x33\n\t"
-        "movw %%ax, %0"
-        : "=m"(ax)
-        :
-        : "ax", "bx", "cx", "dx", "cc", "memory");
-
-    return ax != 0;
-}
-
-static int mouse_left_pressed(void)
-{
-    uint16_t bx;
-
-    if (!g_mouse_available) {
-        return 0;
-    }
-
-    __asm__ __volatile__(
-        "movw $0x0003, %%ax\n\t"
-        "int $0x33\n\t"
-        "movw %%bx, %0"
-        : "=m"(bx)
-        :
-        : "ax", "bx", "cx", "dx", "cc", "memory");
-
-    return (bx & 0x0001) != 0;
-}
-
-static void mouse_wait_left_release(void)
-{
-    while (mouse_left_pressed()) {
-    }
-}
-
+// キーボード、マウス入力監視
 static int input_key_available(void)
 {
     uint8_t status;
@@ -1075,6 +1033,7 @@ static int input_key_available(void)
     return status != 0;
 }
 
+// キーボード、マウス入力データ読み取り
 static uint8_t input_read_key(void)
 {
     uint8_t ch;
@@ -2192,7 +2151,7 @@ int main(void)
 
     // マウス常駐確認
 
-    g_mouse_available = mouse_init();
+    g_mouse_available = mouse98_init();
     if (!g_mouse_available) {
         puts("Mouse driver is not resident.");
         puts("Please load mouse driver before ADV98.EXE.");

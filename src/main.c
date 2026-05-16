@@ -5,6 +5,8 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
+
 
 #define PORT_CG_MODE   0x0068
 #define PORT_KANJI_LSB 0x00A1
@@ -126,6 +128,12 @@ static void ui_refresh_right_stand_only(int bg_id,
                                         enum StandId right_stand,
                                         enum FaceId right_face);
 
+static GameFlag *find_flag(const char *name);
+static GameFlag *find_or_create_flag(const char *name);
+static void add_flag_value(const char *name, int value);
+static int get_flag_value(const char *name);
+
+
 
 static void ui_draw_wait_mark(int x, int y, unsigned char color)
 {
@@ -139,6 +147,7 @@ static void ui_draw_wait_mark(int x, int y, unsigned char color)
 static void ui_draw_choice_jis(const uint16_t *choice1, int choice1_len,
                                const uint16_t *choice2, int choice2_len,
                                int selected);
+
 
 struct Message {
     const uint16_t *name;
@@ -1391,6 +1400,74 @@ static int is_flag_on(const char *name)
     return 0;
 }
 
+static GameFlag *find_flag(const char *name)
+{
+    int i;
+
+    for (i = 0; i < MAX_FLAGS; ++i) {
+
+        if (g_flags[i].name[0] == '\0') {
+            continue;
+        }
+
+        if (strcmp(g_flags[i].name, name) == 0) {
+            return &g_flags[i];
+        }
+    }
+
+    return 0;
+}
+
+static GameFlag *find_or_create_flag(const char *name)
+{
+    int i;
+    GameFlag *flag;
+
+    flag = find_flag(name);
+
+    if (flag != 0) {
+        return flag;
+    }
+
+    for (i = 0; i < MAX_FLAGS; ++i) {
+
+        if (g_flags[i].name[0] == '\0') {
+
+            strcpy(g_flags[i].name, name);
+            g_flags[i].value = 0;
+
+            return &g_flags[i];
+        }
+    }
+
+    return 0;
+}
+
+static void add_flag_value(const char *name, int value)
+{
+    GameFlag *flag;
+
+    flag = find_or_create_flag(name);
+
+    if (flag != 0) {
+        flag->value += value;
+    }
+}
+
+static int get_flag_value(const char *name)
+{
+    GameFlag *flag;
+
+    flag = find_flag(name);
+
+    if (flag == 0) {
+        return 0;
+    }
+
+    return flag->value;
+}
+
+
 // Shift_JIS 1文字 → JIS 1文字
 static uint16_t sjis_to_jis(uint8_t sjis_hi, uint8_t sjis_lo)
 {
@@ -1542,13 +1619,16 @@ static void run_script_sjis(void)
             char cmd[32];
             char arg1[64];
             char arg2[64];
+            char arg3[64];
             int count;
 
             cmd[0] = '\0';
             arg1[0] = '\0';
             arg2[0] = '\0';
+            arg3[0] = '\0';
 
-            count = sscanf(line, "%31s %63s %63s", cmd, arg1, arg2);
+            count = sscanf(line, "%31s %63s %63s %63s",
+                           cmd, arg1, arg2, arg3);
 
             if (strcmp(cmd, "#choice") == 0) {
                 if (count >= 3) {
@@ -1600,6 +1680,22 @@ static void run_script_sjis(void)
                 continue;
             }
 
+            if (strcmp(cmd,"#add") == 0) {
+                if (count >= 3) {
+                    add_flag_value(arg1, atoi(arg2));
+                }
+                continue;
+            }
+
+            if (strcmp(cmd, "#ifge") == 0) {
+                if (count >= 4) {
+                    if (get_flag_value(arg1) >= atoi(arg2)) {
+                        find_label_and_jump(fp, arg3);
+                    }
+                }
+                continue;
+            }      
+     
             if (strcmp(cmd, "#pal") == 0) {
                 if (count >= 2) {
                     // printfを使いと.COMの容量オーバーになるのでprintデバックは今使わない

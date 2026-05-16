@@ -2,10 +2,23 @@
 #right character01 normal
 #bgm opening.m
 
-[美緒]
-「おはよう」
+#add mio 1
+#add mio 1
+#add mio 1
 
-#bgm opening.m
+#ifge mio 3 route_mio
 
-[健一]
-「あ……」
+[]
+通常ルート
+
+#jump end
+
+#label route_mio
+
+[]
+美緒ルート
+
+#label end
+
+[]
+終了

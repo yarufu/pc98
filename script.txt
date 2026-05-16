@@ -1,24 +1,17 @@
 #bg bg01
 #right character01 normal
+#left character02 normal
 #bgm opening.m
 
-#add mio 1
-#add mio 1
-#add mio 1
+[美緒]
+「通常です」
 
-#ifge mio 3 route_mio
+#left character02 happy
 
-[]
-通常ルート
+[美緒]
+「表情だけ変えました」
 
-#jump end
+#left character02 angry
 
-#label route_mio
-
-[]
-美緒ルート
-
-#label end
-
-[]
-終了
+[美緒]
+「怒りました」

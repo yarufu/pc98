@@ -27,8 +27,8 @@ void graph98_draw_digit(int x, int y, int digit, unsigned char color);
 void graph98_draw_number(int x, int y, int value, unsigned char color);
 void graph98_draw_char(int x, int y, char ch, unsigned char color);
 void graph98_draw_string(int x, int y, const char *str, unsigned char color);
-
-
+int graph98_load_g98_rect(const char *path, int x0, int y0, int x1, int y1);
+void graph98_wait_vsync(void);
 
 #ifdef __cplusplus
 }

@@ -31,6 +31,22 @@
 #define GRAPH98_SPRITE_MAGIC_3 '0'
 #define GRAPH98_SPRITE_VERSION 1u
 
+#define GDC_MASTER_STATUS 0x00A0
+#define GDC_STATUS_VSYNC 0x20
+
+static uint8_t io_in8(uint16_t port)
+{
+    uint8_t value;
+
+    __asm__ __volatile__(
+        "inb %%dx, %%al"
+        : "=a"(value)
+        : "d"(port)
+        : "cc");
+
+    return value;
+}
+
 struct graph98_g98_header {
     uint8_t magic[4];
     uint16_t width;
@@ -505,6 +521,30 @@ static int graph98_read_sprite_header(FILE *fp,
     return 1;
 }
 
+void graph98_wait_vsync(void)
+{
+    uint16_t guard;
+
+    guard = 0;
+
+    while ((io_in8(GDC_MASTER_STATUS) & GDC_STATUS_VSYNC) != 0u) {
+
+        if (++guard == 0u) {
+            return;
+        }
+    }
+
+    guard = 0;
+
+    while ((io_in8(GDC_MASTER_STATUS) & GDC_STATUS_VSYNC) == 0u) {
+
+        if (++guard == 0u) {
+            return;
+        }
+    }
+}
+
+
 int graph98_load_g98(const char *path)
 {
     struct graph98_g98_header header;
@@ -576,6 +616,123 @@ int graph98_load_g98(const char *path)
     }
 
     ok = 1;
+    fclose(fp);
+    return ok;
+}
+
+static int graph98_copy_plane_rect_from_file(FILE *fp,
+                                             volatile uint8_t __far *plane,
+                                             unsigned long plane_start,
+                                             int x0,
+                                             int y0,
+                                             int x1,
+                                             int y1)
+{
+    static uint8_t row_buffer[80];
+    int y;
+    int byte_x0;
+    int byte_x1;
+    int bytes;
+    int i;
+    unsigned long pos;
+
+    byte_x0 = x0 >> 3;
+    byte_x1 = x1 >> 3;
+    bytes = byte_x1 - byte_x0 + 1;
+
+    if (bytes <= 0 || bytes > 80) {
+        return 0;
+    }
+
+    for (y = y0; y <= y1; ++y) {
+        pos = plane_start +
+              (unsigned long)y * GRAPH98_BYTES_PER_LINE +
+              (unsigned long)byte_x0;
+
+        if (fseek(fp, pos, SEEK_SET) != 0) {
+            return 0;
+        }
+
+        if (fread(row_buffer, 1u, (size_t)bytes, fp) != (size_t)bytes) {
+            return 0;
+        }
+
+        for (i = 0; i < bytes; ++i) {
+            plane[(uint16_t)(y * GRAPH98_BYTES_PER_LINE + byte_x0 + i)] =
+                row_buffer[i];
+        }
+    }
+
+    return 1;
+}
+
+int graph98_load_g98_rect(const char *path, int x0, int y0, int x1, int y1)
+{
+    struct graph98_g98_header header;
+    FILE *fp;
+    unsigned long header_size;
+    unsigned long plane_size;
+    int ok;
+
+    if (x0 < 0) x0 = 0;
+    if (y0 < 0) y0 = 0;
+    if (x1 >= GRAPH98_WIDTH) x1 = GRAPH98_WIDTH - 1;
+    if (y1 >= GRAPH98_HEIGHT) y1 = GRAPH98_HEIGHT - 1;
+
+    if (x0 > x1 || y0 > y1) {
+        return 0;
+    }
+
+    fp = fopen(path, "rb");
+    if (fp == 0) {
+        return 0;
+    }
+
+    if (!graph98_read_g98_header(fp, &header)) {
+        fclose(fp);
+        return 0;
+    }
+
+    if (header.magic[0] != GRAPH98_G98_MAGIC_0 ||
+        header.magic[1] != GRAPH98_G98_MAGIC_1 ||
+        header.magic[2] != GRAPH98_G98_MAGIC_2 ||
+        header.magic[3] != GRAPH98_G98_MAGIC_3 ||
+        header.width != GRAPH98_WIDTH ||
+        header.height != GRAPH98_HEIGHT ||
+        header.version != GRAPH98_G98_VERSION) {
+        fclose(fp);
+        return 0;
+    }
+
+    header_size = 13UL;
+    plane_size = (unsigned long)GRAPH98_BYTES_PER_LINE * GRAPH98_HEIGHT;
+
+    ok = 1;
+
+    if (!graph98_copy_plane_rect_from_file(fp, GRAPH98_VRAM_BLUE,
+                                           header_size + plane_size * 0UL,
+                                           x0, y0, x1, y1)) {
+        ok = 0;
+    }
+
+    if (ok && !graph98_copy_plane_rect_from_file(fp, GRAPH98_VRAM_RED,
+                                                 header_size + plane_size * 1UL,
+                                                 x0, y0, x1, y1)) {
+        ok = 0;
+    }
+
+    if (ok && !graph98_copy_plane_rect_from_file(fp, GRAPH98_VRAM_GREEN,
+                                                 header_size + plane_size * 2UL,
+                                                 x0, y0, x1, y1)) {
+        ok = 0;
+    }
+
+    if (ok && !graph98_copy_plane_rect_from_file(fp, GRAPH98_VRAM_INTENS,
+                                                 header_size + plane_size * 3UL,
+                                                 x0, y0, x1, y1)) {
+        ok = 0;
+    }
+
     fclose(fp);
     return ok;
 }

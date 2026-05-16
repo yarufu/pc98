@@ -1,6 +1,6 @@
 #bg bg01
 #right character01 normal
-#left character02 normal
+
 #bgm opening.m
 
 [”ü]

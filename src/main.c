@@ -71,6 +71,8 @@ static GameFlag g_flags[MAX_FLAGS];
 static GameState g_state;
 static int g_pmd_available = 0;
 
+// マウス制御
+static int g_mouse_available = 0;
 
 /* 関数宣言部 */
 static void input_wait_key(void);
@@ -134,6 +136,13 @@ static GameFlag *find_or_create_flag(const char *name);
 static void add_flag_value(const char *name, int value);
 static int get_flag_value(const char *name);
 static void debug_log(const char *fmt, ...);
+
+// マウス関連
+static int mouse_init(void);
+static int mouse_left_pressed(void);
+static void mouse_wait_left_release(void);
+static int input_key_available(void);
+static uint8_t input_read_key(void);
 
 
 static void ui_draw_wait_mark(int x, int y, unsigned char color)
@@ -986,25 +995,101 @@ static void get_kanji_font(uint16_t jis_code, unsigned char *buffer)
     io_out8(PORT_CG_MODE, CG_MODE_CODE_ACCESS);
 }
 
-/* Enterキーが押されるまで待ちます。 */
+/* マウス（左クリック）、Enterキーが押されるまで待ちます。 */
 static void input_wait_key(void)
 {
     uint8_t ch;
 
     for (;;) {
-        __asm__ __volatile__(
-            "movb $0x08, %%ah\n\t"
-            "int $0x21\n\t"
-            "movb %%al, %0"
-            : "=rm"(ch)
-            :
-            : "ax", "cc", "memory");
+        if (mouse_left_pressed()) {
+            mouse_wait_left_release();
+            break;
+        }
+
+        if (!input_key_available()) {
+            continue;
+        }
+
+        ch = input_read_key();
 
         if (ch == 0x0D) {
             break;  /* Enter */
         }
     }
 }
+
+
+// マウス関連
+static int mouse_init(void)
+{
+    uint16_t ax;
+
+    __asm__ __volatile__(
+        "xorw %%ax, %%ax\n\t"
+        "int $0x33\n\t"
+        "movw %%ax, %0"
+        : "=m"(ax)
+        :
+        : "ax", "bx", "cx", "dx", "cc", "memory");
+
+    return ax != 0;
+}
+
+static int mouse_left_pressed(void)
+{
+    uint16_t bx;
+
+    if (!g_mouse_available) {
+        return 0;
+    }
+
+    __asm__ __volatile__(
+        "movw $0x0003, %%ax\n\t"
+        "int $0x33\n\t"
+        "movw %%bx, %0"
+        : "=m"(bx)
+        :
+        : "ax", "bx", "cx", "dx", "cc", "memory");
+
+    return (bx & 0x0001) != 0;
+}
+
+static void mouse_wait_left_release(void)
+{
+    while (mouse_left_pressed()) {
+    }
+}
+
+static int input_key_available(void)
+{
+    uint8_t status;
+
+    __asm__ __volatile__(
+        "movb $0x0B, %%ah\n\t"
+        "int $0x21\n\t"
+        "movb %%al, %0"
+        : "=rm"(status)
+        :
+        : "ax", "cc", "memory");
+
+    return status != 0;
+}
+
+static uint8_t input_read_key(void)
+{
+    uint8_t ch;
+
+    __asm__ __volatile__(
+        "movb $0x08, %%ah\n\t"
+        "int $0x21\n\t"
+        "movb %%al, %0"
+        : "=rm"(ch)
+        :
+        : "ax", "cc", "memory");
+
+    return ch;
+}
+
 
 /*
  * '1' または '2' が押されるまで待ちます。
@@ -2092,6 +2177,7 @@ static void handle_choice_block(FILE *fp, const char *label1, const char *label2
 int main(void)
 {
 
+    // PMD常駐確認
     g_pmd_available = pmd_is_resident();
 
     if (!g_pmd_available) {
@@ -2103,6 +2189,15 @@ int main(void)
 
     remove("debug.txt");
     // debug_log("ADV98 START");
+
+    // マウス常駐確認
+
+    g_mouse_available = mouse_init();
+    if (!g_mouse_available) {
+        puts("Mouse driver is not resident.");
+        puts("Please load mouse driver before ADV98.EXE.");
+        return 1;
+    }
 
     text98_clear_screen();
     text98_hide_cursor();

@@ -1,44 +1,11 @@
 #bg bg01
 #right character01 normal
+#bgm opening.m
 
 [美緒]
-犯人探し、手伝ってくれる？
+「おはよう」
 
-#choice help refuse
-手伝う
-断る
-
-#label help
-#set helped_mio
+#bgm opening.m
 
 [健一]
-わかった。僕でよければ手伝うよ。
-
-#jump after_choice
-
-#label refuse
-#reset helped_mio
-
-[健一]
-ごめん、今はちょっと難しいかも。
-
-#jump after_choice
-
-#label after_choice
-
-#if helped_mio good
-#ifnot helped_mio normal
-
-#label good
-[美緒]
-ありがとう。助かるよ。
-#jump end
-
-#label normal
-[美緒]
-そっか……わかった。
-#jump end
-
-#label end
-[]
-こうして放課後の時間が過ぎていった。
+「あ……」

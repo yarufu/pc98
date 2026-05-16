@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <stdarg.h>
 
 
 #define PORT_CG_MODE   0x0068
@@ -132,7 +133,7 @@ static GameFlag *find_flag(const char *name);
 static GameFlag *find_or_create_flag(const char *name);
 static void add_flag_value(const char *name, int value);
 static int get_flag_value(const char *name);
-
+static void debug_log(const char *fmt, ...);
 
 
 static void ui_draw_wait_mark(int x, int y, unsigned char color)
@@ -1468,6 +1469,30 @@ static int get_flag_value(const char *name)
 }
 
 
+static void debug_log(const char *fmt, ...)
+{
+    FILE *fp;
+    va_list args;
+
+    fp = fopen("debug.txt", "a");
+
+    if (fp == 0) {
+        return;
+    }
+
+    va_start(args, fmt);
+
+    vfprintf(fp, fmt, args);
+
+    fprintf(fp, "\n");
+
+    va_end(args);
+
+    fclose(fp);
+}
+
+
+
 // Shift_JIS 1文字 → JIS 1文字
 static uint16_t sjis_to_jis(uint8_t sjis_hi, uint8_t sjis_lo)
 {
@@ -2154,6 +2179,8 @@ int main(void)
         
     }
 
+    remove("debug.txt");
+    // debug_log("ADV98 START");
 
     text98_clear_screen();
     text98_hide_cursor();
@@ -2164,6 +2191,7 @@ int main(void)
     if (!graph98_load_palette_file("adv.pal")) {
         graph98_apply_adv_palette();
     }
+
 
     graph98_clear(0);
 

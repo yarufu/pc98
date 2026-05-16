@@ -50,12 +50,23 @@ typedef struct {
     char name[32];
     int value;
 } GameFlag;
+typedef struct {
+    enum BackgroundId bg;
+
+    enum StandId left_stand;
+    enum FaceId left_face;
+
+    enum StandId right_stand;
+    enum FaceId right_face;
+
+    char bgm[64];
+} GameState;
 
 #define MAX_FLAGS 16
 
 static GameFlag g_flags[MAX_FLAGS];
+static GameState g_state;
 static int g_pmd_available = 0;
-
 
 
 /* 関数宣言部 */
@@ -1487,12 +1498,6 @@ static void run_script_sjis(void)
     int name_len;
     int text_len;
 
-    enum BackgroundId current_bg;
-    enum StandId current_left_stand;
-    enum StandId current_right_stand;
-    enum FaceId current_left_face;
-    enum FaceId current_right_face;
-
     enum BackgroundId last_bg;
     enum StandId last_left_stand;
     enum StandId last_right_stand;
@@ -1507,11 +1512,12 @@ static void run_script_sjis(void)
 
     current_name[0] = '\0';
 
-    current_bg = BG_01;
-    current_left_stand = STAND_NONE;
-    current_right_stand = STAND_NONE;
-    current_left_face = FACE_NORMAL;
-    current_right_face = FACE_NORMAL;
+    g_state.bg = BG_01;
+    g_state.left_stand = STAND_NONE;
+    g_state.right_stand = STAND_NONE;
+    g_state.left_face = FACE_NORMAL;
+    g_state.right_face = FACE_NORMAL;
+    g_state.bgm[0] = '\0';
 
     last_bg = BG_NONE;
     last_left_stand = STAND_NONE;
@@ -1666,26 +1672,26 @@ static void run_script_sjis(void)
                 enum StandId old_right_stand;
                 enum FaceId old_right_face;
 
-                old_bg = current_bg;
-                old_left_stand = current_left_stand;
-                old_left_face = current_left_face;
-                old_right_stand = current_right_stand;
-                old_right_face = current_right_face;
+                old_bg = g_state.bg;
+                old_left_stand = g_state.left_stand;
+                old_left_face = g_state.left_face;
+                old_right_stand = g_state.right_stand;
+                old_right_face = g_state.right_face;
 
                 process_command_line(line,
-                                     &current_bg,
-                                     &current_left_stand,
-                                     &current_left_face,
-                                     &current_right_stand,
-                                     &current_right_face);
+                                     &g_state.bg,
+                                     &g_state.left_stand,
+                                     &g_state.left_face,
+                                     &g_state.right_stand,
+                                     &g_state.right_face);
 
-                if (current_bg != old_bg) {
+                if (g_state.bg != old_bg) {
                     scene_dirty = 1;
                     stand_dirty = 0;
-                } else if (current_left_stand != old_left_stand ||
-                           current_left_face != old_left_face ||
-                           current_right_stand != old_right_stand ||
-                           current_right_face != old_right_face) {
+                } else if (g_state.left_stand != old_left_stand ||
+                           g_state.left_face != old_left_face ||
+                           g_state.right_stand != old_right_stand ||
+                           g_state.right_face != old_right_face) {
                     stand_dirty = 1;
                 }
             }
@@ -1712,18 +1718,18 @@ static void run_script_sjis(void)
         // 変化があれば全画面再描画
         if (scene_dirty ||
             stand_dirty ||
-            last_bg != current_bg) {
+            last_bg != g_state.bg) {
 
             graph98_clear(0);
-            ui_draw_background(current_bg);
-            ui_draw_current_stands(current_left_stand, current_left_face,
-                                   current_right_stand, current_right_face);
+            ui_draw_background(g_state.bg);
+            ui_draw_current_stands(g_state.left_stand, g_state.left_face,
+                                   g_state.right_stand, g_state.right_face);
 
-            last_bg = current_bg;
-            last_left_stand = current_left_stand;
-            last_left_face = current_left_face;
-            last_right_stand = current_right_stand;
-            last_right_face = current_right_face;
+            last_bg = g_state.bg;
+            last_left_stand = g_state.left_stand;
+            last_left_face = g_state.left_face;
+            last_right_stand = g_state.right_stand;
+            last_right_face = g_state.right_face;
             scene_dirty = 0;
             stand_dirty = 0;
         }

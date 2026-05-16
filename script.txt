@@ -2,12 +2,43 @@
 #right character01 normal
 
 [美緒]
-最初はＢＧＭを出力します。
-#bgm opening.m
+犯人探し、手伝ってくれる？
 
-[美緒]
-次ははＢＧＭを停止します。
-#bgmstop
+#choice help refuse
+手伝う
+断る
 
+#label help
+#set helped_mio
+
+[健一]
+わかった。僕でよければ手伝うよ。
+
+#jump after_choice
+
+#label refuse
+#reset helped_mio
+
+[健一]
+ごめん、今はちょっと難しいかも。
+
+#jump after_choice
+
+#label after_choice
+
+#if helped_mio good
+#ifnot helped_mio normal
+
+#label good
 [美緒]
-おわりです。
+ありがとう。助かるよ。
+#jump end
+
+#label normal
+[美緒]
+そっか……わかった。
+#jump end
+
+#label end
+[]
+こうして放課後の時間が過ぎていった。

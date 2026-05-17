@@ -96,6 +96,9 @@ static int g_pmd_available = 0;
 // マウス制御
 static int g_mouse_available = 0;
 static int g_save_key_armed = 1;
+static int g_load_key_armed = 1;
+static int g_request_scene_redraw = 0;
+static int g_request_script_resume = 0;
 
 /* 関数宣言部 */
 static void input_wait_key(void);
@@ -161,7 +164,12 @@ static int get_flag_value(const char *name);
 static void debug_log(const char *fmt, ...);
 static int read_script_line(FILE *fp, char *line, int line_size, int *script_line);
 static int save_game_state(void);
+static int load_game_state(void);
+static void extract_name_from_brackets(const char *line, char *out_name, int out_size);
+static void resume_script_line(FILE *fp, int *script_line,
+                               char *current_name, int current_name_size);
 static void handle_save_hotkey(uint8_t ch);
+static void handle_load_hotkey(uint8_t ch);
 
 // マウス関連
 static int input_key_available(void);
@@ -791,6 +799,10 @@ static void ui_draw_message_jis(const uint16_t *name, int name_len,
                                               start_index);
         input_wait_key();
 
+        if (g_request_script_resume) {
+            break;
+        }
+
         if (page_count <= 0) {
             break;
         }
@@ -1055,6 +1067,7 @@ static void input_wait_key(void)
 
         if (!input_key_available()) {
             g_save_key_armed = 1;
+            g_load_key_armed = 1;
             continue;
         }
 
@@ -1066,8 +1079,18 @@ static void input_wait_key(void)
             continue;
         }
 
+        if ((ch == 'L' || ch == 'l') && g_load_key_armed) {
+            handle_load_hotkey(ch);
+            g_load_key_armed = 0;
+            continue;
+        }
+
         if (ch != 'S' && ch != 's') {
             g_save_key_armed = 1;
+        }
+
+        if (ch != 'L' && ch != 'l') {
+            g_load_key_armed = 1;
         }
 
         if (ch == 0x0D) {
@@ -1518,10 +1541,95 @@ static int save_game_state(void)
     return 1;
 }
 
+static int load_game_state(void)
+{
+    FILE *fp;
+    SaveData save_data;
+
+    memset(&save_data, 0, sizeof(save_data));
+
+    fp = fopen("SAVE.DAT", "rb");
+    if (fp == 0) {
+        debug_log("LOAD FAILED open file=SAVE.DAT");
+        return 0;
+    }
+
+    if (fread(&save_data, sizeof(save_data), 1, fp) != 1) {
+        debug_log("LOAD FAILED read file=SAVE.DAT");
+        fclose(fp);
+        return 0;
+    }
+
+    fclose(fp);
+
+    if (memcmp(save_data.magic, "ADV98SAV", 8) != 0) {
+        debug_log("LOAD FAILED bad magic");
+        return 0;
+    }
+
+    if (save_data.version != SAVE_VERSION) {
+        debug_log("LOAD FAILED bad version=%d expected=%d",
+                  save_data.version,
+                  SAVE_VERSION);
+        return 0;
+    }
+
+    g_state = save_data.state;
+    memcpy(g_flags, save_data.flags, sizeof(g_flags));
+
+    debug_log("LOAD OK file=SAVE.DAT version=%d line=%d",
+              save_data.version,
+              save_data.state.script_line);
+
+    return 1;
+}
+
+static void resume_script_line(FILE *fp, int *script_line,
+                               char *current_name, int current_name_size)
+{
+    char line[256];
+    int target_line;
+
+    if (fp == 0 || script_line == 0 || current_name == 0 || current_name_size <= 0) {
+        return;
+    }
+
+    target_line = g_state.script_line;
+
+    fseek(fp, 0L, SEEK_SET);
+    *script_line = 0;
+    current_name[0] = '\0';
+
+    while (*script_line < target_line - 1) {
+        if (!read_script_line(fp, line, sizeof(line), script_line)) {
+            break;
+        }
+
+        remove_newline(line);
+        trim_leading_spaces(line);
+
+        if (line[0] == '[') {
+            extract_name_from_brackets(line, current_name, current_name_size);
+        }
+    }
+
+    debug_log("LOAD RESUME line=%d", target_line);
+}
+
 static void handle_save_hotkey(uint8_t ch)
 {
     (void)ch;
     save_game_state();
+}
+
+static void handle_load_hotkey(uint8_t ch)
+{
+    (void)ch;
+
+    if (load_game_state()) {
+        g_request_scene_redraw = 1;
+        g_request_script_resume = 1;
+    }
 }
 
 
@@ -1669,7 +1777,20 @@ static void run_script_sjis(void)
         return;
     }
 
-    while (read_script_line(fp, line, sizeof(line), &script_line)) {
+    for (;;) {
+        if (g_request_script_resume) {
+            resume_script_line(fp, &script_line,
+                               current_name, sizeof(current_name));
+            scene_dirty = 1;
+            stand_dirty = 0;
+            g_request_scene_redraw = 0;
+            g_request_script_resume = 0;
+        }
+
+        if (!read_script_line(fp, line, sizeof(line), &script_line)) {
+            break;
+        }
+
         g_state.script_line = script_line;
         remove_newline(line);
         trim_leading_spaces(line);
@@ -1959,6 +2080,12 @@ static void run_script_sjis(void)
         stand_dirty = 0;
         }
         ui_draw_message_jis(name_jis, name_len, text_jis, text_len);
+
+        if (g_request_scene_redraw) {
+            scene_dirty = 1;
+            stand_dirty = 0;
+            g_request_scene_redraw = 0;
+        }
     }
 
     fclose(fp);

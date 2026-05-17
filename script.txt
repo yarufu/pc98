@@ -1,12 +1,48 @@
-#bg bg001
-#right character01 normal
+#bg class
 #bgm opening.m
+#right character01 normal
 
-[健一]
-ここ、静かだな
-
-[]
-誰もいない教室は、さっきまでの喧騒が嘘みたいに落ち着いている。そんな中、僕を呼び出した張本人は、いつもと変わらない様子でこちらを見ていた。
 
 [美緒]
-うん。今なら誰も来ないと思う
+体育館についてきて？
+
+#choice gym refuse
+ついていく
+断る
+
+#label gym
+#set helped_mio
+#bg bg002
+[健一]
+わかった。僕でよければ手伝うよ。
+
+#jump after_choice
+
+#label refuse
+#reset helped_mio
+
+
+[健一]
+ごめん、今はちょっと難しいかも。
+
+#jump after_choice
+
+#label after_choice
+
+#if helped_mio good
+#ifnot helped_mio normal
+
+#label good
+[美緒]
+ありがとう。助かるよ。
+#jump end
+
+#label normal
+[美緒]
+そっか……わかった。
+#jump end
+
+#label end
+[]
+こうして放課後の時間が過ぎていった。
+

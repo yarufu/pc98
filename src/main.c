@@ -34,7 +34,24 @@ enum StandId {
     STAND_NONE = 0,
     STAND_CHARACTER01,
     STAND_CHARACTER02,
-    STAND_CHARACTER03
+    STAND_CHARACTER03,
+    STAND_CHARACTER04,
+    STAND_CHARACTER05,
+    STAND_CHARACTER06,
+    STAND_CHARACTER07,
+    STAND_CHARACTER08,
+    STAND_CHARACTER09,
+    STAND_CHARACTER10,
+    STAND_CHARACTER11,
+    STAND_CHARACTER12,
+    STAND_CHARACTER13,
+    STAND_CHARACTER14,
+    STAND_CHARACTER15,
+    STAND_CHARACTER16,
+    STAND_CHARACTER17,
+    STAND_CHARACTER18,
+    STAND_CHARACTER19,
+    STAND_CHARACTER20
 };
 
 enum FaceId {
@@ -539,48 +556,32 @@ static const char *ui_get_stand_sprite_path(enum StandId stand_id,
                                             enum FaceId face_id,
                                             int facing_left)
 {
+    static const char face_suffixes[] = {
+        'n', /* FACE_NORMAL */
+        'h', /* FACE_HAPPY */
+        'a', /* FACE_ANGRY */
+        's'  /* FACE_SURPRISED */
+    };
+    static char path[16];
+    int stand_no;
+    char face_suffix;
+
     (void)facing_left;
 
-    if (stand_id == STAND_CHARACTER01) {
-        if (face_id == FACE_HAPPY) {
-            return "c01_h.spr";
-        }
-        if (face_id == FACE_ANGRY) {
-            return "c01_a.spr";
-        }
-        if (face_id == FACE_SURPRISED) {
-            return "c01_s.spr";
-        }
-        return "c01_n.spr";
+    if (stand_id <= STAND_NONE || stand_id > STAND_CHARACTER20) {
+        return 0;
     }
 
-    if (stand_id == STAND_CHARACTER02) {
-        if (face_id == FACE_HAPPY) {
-            return "c02_h.spr";
-        }
-        if (face_id == FACE_ANGRY) {
-            return "c02_a.spr";
-        }
-        if (face_id == FACE_SURPRISED) {
-            return "c02_s.spr";
-        }
-        return "c02_n.spr";
+    if (face_id < FACE_NORMAL || face_id > FACE_SURPRISED) {
+        face_suffix = 'n';
+    } else {
+        face_suffix = face_suffixes[face_id];
     }
 
-    if (stand_id == STAND_CHARACTER03) {
-        if (face_id == FACE_HAPPY) {
-            return "c03_h.spr";
-        }
-        if (face_id == FACE_ANGRY) {
-            return "c03_a.spr";
-        }
-        if (face_id == FACE_SURPRISED) {
-            return "c03_s.spr";
-        }
-        return "c03_n.spr";
-    }
+    stand_no = (int)stand_id;
+    snprintf(path, sizeof(path), "c%02d_%c.spr", stand_no, face_suffix);
 
-    return 0;
+    return path;
 }
 
 static void ui_draw_stand_placeholder(int x, int y)
@@ -1582,7 +1583,7 @@ static void run_script_sjis(void)
 
     while (fgets(line, sizeof(line), fp) != 0) {
         remove_newline(line);
-
+        trim_leading_spaces(line);
         if (line[0] == '\0') {
             continue;
         }
@@ -1793,6 +1794,11 @@ static void run_script_sjis(void)
             128
         );
 
+        /* script.txt 末尾の空行で空メッセージが出るのを防ぐ */
+        if (text_len <= 0) {
+            continue;
+        }
+        
         // 変化があれば部分的に再描画
         if (scene_dirty || strcmp(last_bg_name, g_state.bg_name) != 0) {
             graph98_clear(0);
@@ -1884,7 +1890,7 @@ static void run_script_ascii(void)
     while (fgets(line, sizeof(line), fp) != 0) {
 
         remove_newline(line);
-
+        trim_leading_spaces(line);
         /* 空行スキップ */
         if (line[0] == '\0') {
             continue;
@@ -1922,18 +1928,18 @@ static void run_script_ascii(void)
 // 文字列を立ち絵IDへ
 static enum StandId parse_stand_id(const char *name)
 {
+    int stand_no;
+
     if (strcmp(name, "none") == 0) {
         return STAND_NONE;
     }
 
-    if (strcmp(name, "character01") == 0) {
-        return STAND_CHARACTER01;
-    }
-    if (strcmp(name, "character02") == 0) {
-        return STAND_CHARACTER02;
-    }
-    if (strcmp(name, "character03") == 0) {
-        return STAND_CHARACTER03;
+    if (strncmp(name, "character", 9) == 0) {
+        if (sscanf(name + 9, "%d", &stand_no) == 1) {
+            if (stand_no >= 1 && stand_no <= 20) {
+                return (enum StandId)stand_no;
+            }
+        }
     }
 
     /* 古いスクリプト用の別名。不要なら後で消してOK */

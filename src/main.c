@@ -30,13 +30,6 @@
 
 struct Message;
 
-enum BackgroundId {
-    BG_NONE = 0,
-    BG_01,
-    BG_02,
-    BG_03
-};
-
 enum StandId {
     STAND_NONE = 0,
     STAND_CHARACTER01,
@@ -56,7 +49,7 @@ typedef struct {
     int value;
 } GameFlag;
 typedef struct {
-    enum BackgroundId bg;
+    char bg_name[32];
 
     enum StandId left_stand;
     enum FaceId left_face;
@@ -82,10 +75,10 @@ static void ui_draw_wait_mark(int x, int y, unsigned char color);
 static void text98_hide_cursor(void);
 static void text98_clear_screen(void);
 static int input_wait_choice_cursor(const struct Message *msg,
-                                    enum BackgroundId current_bg);
+                                    const char *current_bg_name);
 static void io_out8(uint16_t port, uint8_t value);
 static void get_kanji_font(uint16_t jis_code, unsigned char *buffer);
-static void ui_draw_background(enum BackgroundId bg_id);
+static void ui_draw_background(const char *bg_name);
 static void ui_draw_message_window(void);
 static void ui_draw_background_test(void);
 static const char *ui_get_stand_sprite_path(enum StandId stand_id,
@@ -102,12 +95,10 @@ static int ui_draw_message_page_jis(const uint16_t *name, int name_len,
                                     int start_index);
 static void ui_draw_message_jis(const uint16_t *name, int name_len,
                                 const uint16_t *jis_codes, int count);
-static enum BackgroundId parse_bg_id(const char *name);
-static const char *get_bg_path(enum BackgroundId bg_id);
 static enum StandId parse_stand_id(const char *name);
 static enum FaceId parse_face_id(const char *name);
 static void process_command_line(const char *line,
-                                 enum BackgroundId *bg_id,
+                                 char *bg_name,
                                  enum StandId *left_stand,
                                  enum FaceId *left_face,
                                  enum StandId *right_stand,
@@ -125,11 +116,11 @@ static int find_flag_index(const char *name);
 static void set_flag_on(const char *name);
 static void set_flag_off(const char *name);
 static int is_flag_on(const char *name);
-static void ui_restore_stand_background_rect(int x0, int y0, int x1, int y1, int bg_id);
-static void ui_refresh_left_stand_only(int bg_id,
+static void ui_restore_stand_background_rect(int x0, int y0, int x1, int y1, const char *bg_name);
+static void ui_refresh_left_stand_only(const char *bg_name,
                                        enum StandId left_stand,
                                        enum FaceId left_face);
-static void ui_refresh_right_stand_only(int bg_id,
+static void ui_refresh_right_stand_only(const char *bg_name,
                                         enum StandId right_stand,
                                         enum FaceId right_face);
 
@@ -286,13 +277,51 @@ static void ui_draw_message_window(void)
     // graph98_rect(96, 308, 543, 381, 8);
 }
 
-static void ui_draw_background(enum BackgroundId bg_id)
+static void build_bg_path(const char *bg_name, char *path, int path_size)
 {
-    const char *path;
+    int i;
 
-    path = get_bg_path(bg_id);
+    if (path_size <= 0) {
+        return;
+    }
 
-    if (path != 0) {
+    if (bg_name == 0 || bg_name[0] == '\0') {
+        path[0] = '\0';
+        return;
+    }
+
+    for (i = 0; i < path_size - 1 && bg_name[i] != '\0'; ++i) {
+        path[i] = bg_name[i];
+    }
+
+    if (i < path_size - 1) {
+        path[i++] = '.';
+    }
+    if (i < path_size - 1) {
+        path[i++] = 'g';
+    }
+    if (i < path_size - 1) {
+        path[i++] = '9';
+    }
+    if (i < path_size - 1) {
+        path[i++] = '8';
+    }
+
+    path[i] = '\0';
+}
+
+static void ui_draw_background(const char *bg_name)
+{
+    char path[40];
+
+    if (bg_name == 0 || bg_name[0] == '\0') {
+        ui_draw_background_test();
+        return;
+    }
+
+    build_bg_path(bg_name, path, sizeof(path));
+
+    if (path[0] != '\0') {
         if (graph98_load_g98(path)) {
             return;
         }
@@ -461,15 +490,17 @@ static void ui_draw_background_test(void)
     graph98_vline(576, 0, 399, 15);
 }
 
-static void ui_restore_stand_background_rect(int x0, int y0, int x1, int y1, int bg_id)
+static void ui_restore_stand_background_rect(int x0, int y0, int x1, int y1, const char *bg_name)
 {
-    const char *path;
+    char path[40];
 
-    path = get_bg_path((enum BackgroundId)bg_id);
+    if (bg_name != 0 && bg_name[0] != '\0') {
+        build_bg_path(bg_name, path, sizeof(path));
 
-    if (path != 0) {
-        if (graph98_load_g98_rect(path, x0, y0, x1, y1)) {
-            return;
+        if (path[0] != '\0') {
+            if (graph98_load_g98_rect(path, x0, y0, x1, y1)) {
+                return;
+            }
         }
     }
 
@@ -477,10 +508,10 @@ static void ui_restore_stand_background_rect(int x0, int y0, int x1, int y1, int
      * 背景ファイル復元に失敗した場合の保険。
      * ここでは全背景再描画に戻します。
      */
-    ui_draw_background((enum BackgroundId)bg_id);
+    ui_draw_background(bg_name);
 }
 
-static void ui_refresh_left_stand_only(int bg_id,
+static void ui_refresh_left_stand_only(const char *bg_name,
                                        enum StandId left_stand,
                                        enum FaceId left_face)
 {
@@ -488,11 +519,11 @@ static void ui_refresh_left_stand_only(int bg_id,
                                      STAND_Y,
                                      STAND_LEFT_X + STAND_W - 1,
                                      STAND_Y + STAND_H - 1,
-                                     bg_id);
+                                     bg_name);
     ui_draw_stand(left_stand, left_face, STAND_LEFT_X, STAND_Y, 0);
 }
 
-static void ui_refresh_right_stand_only(int bg_id,
+static void ui_refresh_right_stand_only(const char *bg_name,
                                         enum StandId right_stand,
                                         enum FaceId right_face)
 {
@@ -500,7 +531,7 @@ static void ui_refresh_right_stand_only(int bg_id,
                                      STAND_Y,
                                      STAND_RIGHT_X + STAND_W - 1,
                                      STAND_Y + STAND_H - 1,
-                                     bg_id);
+                                     bg_name);
     ui_draw_stand(right_stand, right_face, STAND_RIGHT_X, STAND_Y, 1);
 }
 
@@ -1061,7 +1092,7 @@ static uint8_t input_read_key(void)
  * を使用しています。
  */
 static int input_wait_choice_cursor(const struct Message *msg,
-                                    enum BackgroundId current_bg)
+                                    const char *current_bg_name)
 {
     uint8_t ch;
     int selected;
@@ -1070,7 +1101,7 @@ static int input_wait_choice_cursor(const struct Message *msg,
 
     for (;;) {
         graph98_clear(0);
-        ui_draw_background(current_bg);
+        ui_draw_background(current_bg_name);
         ui_draw_stands_for_message(msg);
         ui_draw_choice_jis(msg->choice1, msg->choice1_len,
                            msg->choice2, msg->choice2_len,
@@ -1516,7 +1547,7 @@ static void run_script_sjis(void)
     int name_len;
     int text_len;
 
-    enum BackgroundId last_bg;
+    char last_bg_name[32];
     enum StandId last_left_stand;
     enum StandId last_right_stand;
     enum FaceId last_left_face;
@@ -1530,14 +1561,14 @@ static void run_script_sjis(void)
 
     current_name[0] = '\0';
 
-    g_state.bg = BG_01;
+    g_state.bg_name[0] = '\0';
     g_state.left_stand = STAND_NONE;
     g_state.right_stand = STAND_NONE;
     g_state.left_face = FACE_NORMAL;
     g_state.right_face = FACE_NORMAL;
     g_state.bgm[0] = '\0';
 
-    last_bg = BG_NONE;
+    last_bg_name[0] = '\0';
     last_left_stand = STAND_NONE;
     last_right_stand = STAND_NONE;
     last_left_face = FACE_NORMAL;
@@ -1712,26 +1743,27 @@ static void run_script_sjis(void)
             }
 
             {
-                enum BackgroundId old_bg;
+                char old_bg_name[32];
                 enum StandId old_left_stand;
                 enum FaceId old_left_face;
                 enum StandId old_right_stand;
                 enum FaceId old_right_face;
 
-                old_bg = g_state.bg;
+                strncpy(old_bg_name, g_state.bg_name, sizeof(old_bg_name) - 1);
+                old_bg_name[sizeof(old_bg_name) - 1] = '\0';
                 old_left_stand = g_state.left_stand;
                 old_left_face = g_state.left_face;
                 old_right_stand = g_state.right_stand;
                 old_right_face = g_state.right_face;
 
                 process_command_line(line,
-                                     &g_state.bg,
+                                     g_state.bg_name,
                                      &g_state.left_stand,
                                      &g_state.left_face,
                                      &g_state.right_stand,
                                      &g_state.right_face);
 
-                if (g_state.bg != old_bg) {
+                if (strcmp(g_state.bg_name, old_bg_name) != 0) {
                     scene_dirty = 1;
                     stand_dirty = 0;
                 } else if (g_state.left_stand != old_left_stand ||
@@ -1762,13 +1794,14 @@ static void run_script_sjis(void)
         );
 
         // 変化があれば部分的に再描画
-        if (scene_dirty || last_bg != g_state.bg) {
+        if (scene_dirty || strcmp(last_bg_name, g_state.bg_name) != 0) {
             graph98_clear(0);
-            ui_draw_background(g_state.bg);
+            ui_draw_background(g_state.bg_name);
             ui_draw_current_stands(g_state.left_stand, g_state.left_face,
                                    g_state.right_stand, g_state.right_face);
 
-            last_bg = g_state.bg;
+            strncpy(last_bg_name, g_state.bg_name, sizeof(last_bg_name) - 1);
+            last_bg_name[sizeof(last_bg_name) - 1] = '\0';
             last_left_stand = g_state.left_stand;
             last_left_face = g_state.left_face;
             last_right_stand = g_state.right_stand;
@@ -1790,7 +1823,7 @@ static void run_script_sjis(void)
 
                 debug_log("LEFT STAND PARTIAL UPDATE");
 
-                ui_refresh_left_stand_only(g_state.bg,
+                ui_refresh_left_stand_only(g_state.bg_name,
                                            g_state.left_stand,
                                            g_state.left_face);
 
@@ -1804,7 +1837,7 @@ static void run_script_sjis(void)
 
                 debug_log("RIGHT STAND PARTIAL UPDATE");
 
-                ui_refresh_right_stand_only(g_state.bg,
+                ui_refresh_right_stand_only(g_state.bg_name,
                                             g_state.right_stand,
                                             g_state.right_face);
 
@@ -1816,11 +1849,12 @@ static void run_script_sjis(void)
                 debug_log("STAND FULL REDRAW");
 
                 graph98_clear(0);
-                ui_draw_background(g_state.bg);
+                ui_draw_background(g_state.bg_name);
                 ui_draw_current_stands(g_state.left_stand, g_state.left_face,
                                        g_state.right_stand, g_state.right_face);
 
-                last_bg = g_state.bg;
+                strncpy(last_bg_name, g_state.bg_name, sizeof(last_bg_name) - 1);
+                last_bg_name[sizeof(last_bg_name) - 1] = '\0';
                 last_left_stand = g_state.left_stand;
                 last_left_face = g_state.left_face;
                 last_right_stand = g_state.right_stand;
@@ -1871,7 +1905,7 @@ static void run_script_ascii(void)
 
         /* セリフ表示 */
         graph98_clear(0);
-        ui_draw_background(BG_01);
+        ui_draw_background("bg001");
 
         /* ここはとりあえず固定立ち絵でもOK */
         ui_draw_stand(STAND_CHARACTER01, FACE_NORMAL, 60, STAND_Y, 0);
@@ -1884,35 +1918,6 @@ static void run_script_ascii(void)
     fclose(fp);
 }
 
-
-// 文字列を背景IDへ
-static enum BackgroundId parse_bg_id(const char *name)
-{
-    if (strcmp(name, "bg01") == 0) {
-        return BG_01;
-    }
-    if (strcmp(name, "bg02") == 0) {
-        return BG_02;
-    }
-    if (strcmp(name, "bg03") == 0) {
-        return BG_03;
-    }
-
-    /* 旧スクリプト互換 */
-    /*
-    if (strcmp(name, "gym") == 0) {
-        return BG_01;
-    }
-    if (strcmp(name, "classroom") == 0) {
-        return BG_02;
-    }
-    if (strcmp(name, "test") == 0) {
-        return BG_NONE;
-    }
-    */
-
-    return BG_NONE;
-}
 
 // 文字列を立ち絵IDへ
 static enum StandId parse_stand_id(const char *name)
@@ -1963,25 +1968,9 @@ static enum FaceId parse_face_id(const char *name)
     return FACE_NORMAL;
 }
 
-// 背景ファイル取得関数
-static const char *get_bg_path(enum BackgroundId bg_id)
-{
-    if (bg_id == BG_01) {
-        return "bg001.g98";
-    }
-    if (bg_id == BG_02) {
-        return "bg002.g98";
-    }
-    if (bg_id == BG_03) {
-        return "bg003.g98";
-    }
-
-    return 0;
-}
-
 // コマンド行を読む関数
 static void process_command_line(const char *line,
-                                 enum BackgroundId *bg_id,
+                                 char *bg_name,
                                  enum StandId *left_stand,
                                  enum FaceId *left_face,
                                  enum StandId *right_stand,
@@ -2003,7 +1992,8 @@ static void process_command_line(const char *line,
 
     if (strcmp(cmd, "#bg") == 0) {
         if (count >= 2) {
-            *bg_id = parse_bg_id(arg1);
+            strncpy(bg_name, arg1, 31);
+            bg_name[31] = '\0';
         }
         return;
     }

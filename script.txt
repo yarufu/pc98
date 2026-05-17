@@ -1,16 +1,18 @@
-#bg bg01
+#bg bg001
 #right character01 normal
-
 #bgm opening.m
 
 [美緒]
 「通常です」
 
+
+#bg bg002
 #left character02 happy
 
 [美緒]
 「表情だけ変えました」
 
+#bg bg003
 #left character02 angry
 
 [美緒]

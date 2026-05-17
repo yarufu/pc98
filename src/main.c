@@ -65,8 +65,13 @@ typedef struct {
     char name[32];
     int value;
 } GameFlag;
+
+#define MAX_FLAGS 16
+#define SAVE_VERSION 1
+
 typedef struct {
     char bg_name[32];
+    int script_line;
 
     enum StandId left_stand;
     enum FaceId left_face;
@@ -77,7 +82,12 @@ typedef struct {
     char bgm[64];
 } GameState;
 
-#define MAX_FLAGS 16
+typedef struct {
+    char magic[8];
+    int version;
+    GameState state;
+    GameFlag flags[MAX_FLAGS];
+} SaveData;
 
 static GameFlag g_flags[MAX_FLAGS];
 static GameState g_state;
@@ -85,6 +95,7 @@ static int g_pmd_available = 0;
 
 // マウス制御
 static int g_mouse_available = 0;
+static int g_save_key_armed = 1;
 
 /* 関数宣言部 */
 static void input_wait_key(void);
@@ -126,8 +137,10 @@ static void ui_draw_current_stands(enum StandId left_stand,
                                    enum FaceId right_face);
 static int input_wait_choice_jis(const uint16_t *choice1, int choice1_len,
                                  const uint16_t *choice2, int choice2_len);
-static void handle_choice_block(FILE *fp, const char *label1, const char *label2);
-static int find_label_and_jump(FILE *fp, const char *label_name);
+static void handle_choice_block(FILE *fp, int *script_line,
+                                const char *label1, const char *label2);
+static int find_label_and_jump(FILE *fp, int *script_line,
+                               const char *label_name);
 static void trim_leading_spaces(char *str);
 static int find_flag_index(const char *name);
 static void set_flag_on(const char *name);
@@ -146,6 +159,9 @@ static GameFlag *find_or_create_flag(const char *name);
 static void add_flag_value(const char *name, int value);
 static int get_flag_value(const char *name);
 static void debug_log(const char *fmt, ...);
+static int read_script_line(FILE *fp, char *line, int line_size, int *script_line);
+static int save_game_state(void);
+static void handle_save_hotkey(uint8_t ch);
 
 // マウス関連
 static int input_key_available(void);
@@ -1038,10 +1054,21 @@ static void input_wait_key(void)
         }
 
         if (!input_key_available()) {
+            g_save_key_armed = 1;
             continue;
         }
 
         ch = input_read_key();
+
+        if ((ch == 'S' || ch == 's') && g_save_key_armed) {
+            handle_save_hotkey(ch);
+            g_save_key_armed = 0;
+            continue;
+        }
+
+        if (ch != 'S' && ch != 's') {
+            g_save_key_armed = 1;
+        }
 
         if (ch == 0x0D) {
             break;  /* Enter */
@@ -1236,7 +1263,7 @@ static void trim_leading_spaces(char *str)
 }
 
 // ラベルを探してそこへ飛ぶ関数
-static int find_label_and_jump(FILE *fp, const char *label_name)
+static int find_label_and_jump(FILE *fp, int *script_line, const char *label_name)
 {
     char line[256];
     char cmd[32];
@@ -1249,8 +1276,11 @@ static int find_label_and_jump(FILE *fp, const char *label_name)
 
     /* いったん先頭へ戻ってラベルを探す */
     fseek(fp, 0L, SEEK_SET);
+    if (script_line != 0) {
+        *script_line = 0;
+    }
 
-    while (fgets(line, sizeof(line), fp) != 0) {
+    while (read_script_line(fp, line, sizeof(line), script_line)) {
         remove_newline(line);
         trim_leading_spaces(line);
 
@@ -1264,6 +1294,9 @@ static int find_label_and_jump(FILE *fp, const char *label_name)
         count = sscanf(line, "%31s %63s", cmd, arg1);
         if (count >= 2) {
             if (strcmp(cmd, "#label") == 0 && strcmp(arg1, label_name) == 0) {
+                debug_log("SCRIPT JUMP LABEL line=%d label=%s",
+                          script_line != 0 ? *script_line : 0,
+                          label_name);
                 /*
                  * ここで見つかった時点で、
                  * fp は #label 行の次の行を指している。
@@ -1439,6 +1472,58 @@ static void debug_log(const char *fmt, ...)
     fclose(fp);
 }
 
+static int read_script_line(FILE *fp, char *line, int line_size, int *script_line)
+{
+    if (fgets(line, line_size, fp) == 0) {
+        return 0;
+    }
+
+    if (script_line != 0) {
+        (*script_line)++;
+        g_state.script_line = *script_line;
+    }
+
+    return 1;
+}
+
+static int save_game_state(void)
+{
+    FILE *fp;
+    SaveData save_data;
+
+    memset(&save_data, 0, sizeof(save_data));
+    memcpy(save_data.magic, "ADV98SAV", 8);
+    save_data.version = SAVE_VERSION;
+    save_data.state = g_state;
+    memcpy(save_data.flags, g_flags, sizeof(g_flags));
+
+    fp = fopen("SAVE.DAT", "wb");
+    if (fp == 0) {
+        debug_log("SAVE FAILED open file=SAVE.DAT");
+        return 0;
+    }
+
+    if (fwrite(&save_data, sizeof(save_data), 1, fp) != 1) {
+        debug_log("SAVE FAILED write file=SAVE.DAT");
+        fclose(fp);
+        return 0;
+    }
+
+    fclose(fp);
+
+    debug_log("SAVE OK file=SAVE.DAT version=%d line=%d",
+              save_data.version,
+              save_data.state.script_line);
+
+    return 1;
+}
+
+static void handle_save_hotkey(uint8_t ch)
+{
+    (void)ch;
+    save_game_state();
+}
+
 
 
 // Shift_JIS 1文字 → JIS 1文字
@@ -1541,6 +1626,7 @@ static void run_script_sjis(void)
     FILE *fp;
     char line[256];
     char current_name[128];
+    int script_line;
 
     uint16_t name_jis[64];
     uint16_t text_jis[128];
@@ -1559,10 +1645,12 @@ static void run_script_sjis(void)
     
     
     stand_dirty = 0;
+    script_line = 0;
 
     current_name[0] = '\0';
 
     g_state.bg_name[0] = '\0';
+    g_state.script_line = 0;
     g_state.left_stand = STAND_NONE;
     g_state.right_stand = STAND_NONE;
     g_state.left_face = FACE_NORMAL;
@@ -1581,7 +1669,8 @@ static void run_script_sjis(void)
         return;
     }
 
-    while (fgets(line, sizeof(line), fp) != 0) {
+    while (read_script_line(fp, line, sizeof(line), &script_line)) {
+        g_state.script_line = script_line;
         remove_newline(line);
         trim_leading_spaces(line);
         if (line[0] == '\0') {
@@ -1605,7 +1694,7 @@ static void run_script_sjis(void)
 
             if (strcmp(cmd, "#choice") == 0) {
                 if (count >= 3) {
-                    handle_choice_block(fp, arg1, arg2);
+                    handle_choice_block(fp, &script_line, arg1, arg2);
                 }
                 continue;
             }
@@ -1616,7 +1705,7 @@ static void run_script_sjis(void)
 
             if (strcmp(cmd, "#jump") == 0) {
                 if (count >= 2) {
-                    find_label_and_jump(fp, arg1);
+                    find_label_and_jump(fp, &script_line, arg1);
                 }
                 continue;
             }
@@ -1638,7 +1727,7 @@ static void run_script_sjis(void)
             if (strcmp(cmd, "#if") == 0) {
                 if (count >= 3) {
                     if (is_flag_on(arg1)) {
-                        find_label_and_jump(fp, arg2);
+                        find_label_and_jump(fp, &script_line, arg2);
                     }
                 }
                 continue;
@@ -1647,7 +1736,7 @@ static void run_script_sjis(void)
             if (strcmp(cmd, "#ifnot") == 0) {
                 if (count >= 3) {
                     if (!is_flag_on(arg1)) {
-                        find_label_and_jump(fp, arg2);
+                        find_label_and_jump(fp, &script_line, arg2);
                     }
                 }
                 continue;
@@ -1663,7 +1752,7 @@ static void run_script_sjis(void)
             if (strcmp(cmd, "#ifge") == 0) {
                 if (count >= 4) {
                     if (get_flag_value(arg1) >= atoi(arg2)) {
-                        find_label_and_jump(fp, arg3);
+                        find_label_and_jump(fp, &script_line, arg3);
                     }
                 }
                 continue;
@@ -2085,7 +2174,8 @@ static int input_wait_choice_jis(const uint16_t *choice1, int choice1_len,
 }
 
 // #choice 用の処理関数を追加
-static void handle_choice_block(FILE *fp, const char *label1, const char *label2)
+static void handle_choice_block(FILE *fp, int *script_line,
+                                const char *label1, const char *label2)
 {
     char line1[256];
     char line2[256];
@@ -2097,10 +2187,10 @@ static void handle_choice_block(FILE *fp, const char *label1, const char *label2
     int choice2_len;
     int selected;
 
-    if (fgets(line1, sizeof(line1), fp) == 0) {
+    if (!read_script_line(fp, line1, sizeof(line1), script_line)) {
         return;
     }
-    if (fgets(line2, sizeof(line2), fp) == 0) {
+    if (!read_script_line(fp, line2, sizeof(line2), script_line)) {
         return;
     }
 
@@ -2123,9 +2213,9 @@ static void handle_choice_block(FILE *fp, const char *label1, const char *label2
                                      choice2_jis, choice2_len);
 
     if (selected == 1) {
-        find_label_and_jump(fp, label1);
+        find_label_and_jump(fp, script_line, label1);
     } else {
-        find_label_and_jump(fp, label2);
+        find_label_and_jump(fp, script_line, label2);
     }
 }
 

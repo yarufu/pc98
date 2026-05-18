@@ -1306,6 +1306,11 @@ static int find_label_and_jump(FILE *fp, int *script_line, const char *label_nam
     while (read_script_line(fp, line, sizeof(line), script_line)) {
         remove_newline(line);
         trim_leading_spaces(line);
+        
+        /* 空行・コメント行スキップ */
+        if (line[0] == '\0' || line[0] == ';') {
+            continue;
+        }
 
         if (line[0] != '#') {
             continue;
@@ -1608,6 +1613,11 @@ static void resume_script_line(FILE *fp, int *script_line,
         remove_newline(line);
         trim_leading_spaces(line);
 
+        /* 空行・コメント行スキップ */
+        if (line[0] == '\0' || line[0] == ';') {
+            continue;
+        }
+
         if (line[0] == '[') {
             extract_name_from_brackets(line, current_name, current_name_size);
         }
@@ -1794,7 +1804,8 @@ static void run_script_sjis(void)
         g_state.script_line = script_line;
         remove_newline(line);
         trim_leading_spaces(line);
-        if (line[0] == '\0') {
+        /* 空行・コメント行スキップ */
+        if (line[0] == '\0' || line[0] == ';') {
             continue;
         }
 
@@ -2107,8 +2118,8 @@ static void run_script_ascii(void)
 
         remove_newline(line);
         trim_leading_spaces(line);
-        /* 空行スキップ */
-        if (line[0] == '\0') {
+        /* 空行・コメント行スキップ */
+        if (line[0] == '\0' || line[0] == ';') {
             continue;
         }
 

@@ -1893,19 +1893,15 @@ static void run_script_sjis(void)
      
             if (strcmp(cmd, "#pal") == 0) {
                 if (count >= 2) {
-                    // printfを使いと.COMの容量オーバーになるのでprintデバックは今使わない
                     // printf("[PAL] load: %s\n", arg1);
-
                     if (graph98_load_palette_file(arg1)) {
-                        // printfを使いと.COMの容量オーバーになるのでprintデバックは今使わない
                         // printf("[PAL] success\n");
                         scene_dirty = 1;
                     } else {
-                        // printfを使いと.COMの容量オーバーになるのでprintデバックは今使わない
+                        debug_log("palette load failed: %s", arg1);
                         // printf("[PAL] FAILED\n");
                     }
                 } else {
-                    // printfを使いと.COMの容量オーバーになるのでprintデバックは今使わないZ
                     // printf("[PAL] invalid args\n");
                 }
                 continue;
@@ -2398,7 +2394,9 @@ int main(void)
     // BGMはPMDに任せるため
     // se86_init();
 
+    // パレット読み込み
     if (!graph98_load_palette_file("adv.pal")) {
+        debug_log("adv.pal not found. Using built-in palette.");
         graph98_apply_adv_palette();
     }
 

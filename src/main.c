@@ -2376,9 +2376,8 @@ int main(void)
     // マウス常駐確認
     g_mouse_available = mouse98_init();
     if (!g_mouse_available) {
-        puts("Mouse driver is not resident.");
-        puts("Please load mouse driver before ADV98.EXE.");
-        return 1;
+        debug_log("Mouse driver is not resident.");
+        debug_log("Mouse input will be disabled.");
     }
 
     text98_clear_screen();

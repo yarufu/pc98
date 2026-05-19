@@ -1784,6 +1784,7 @@ static void run_script_sjis(void)
 
     fp = fopen("script.txt", "rb");
     if (fp == 0) {
+        debug_log("script.txt not found.");
         return;
     }
 

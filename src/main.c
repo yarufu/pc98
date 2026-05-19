@@ -2360,21 +2360,20 @@ static void handle_choice_block(FILE *fp, int *script_line,
 int main(void)
 {
 
+        remove("debug.txt");
+        debug_log("ADV98 START");
+
     // PMD常駐確認
     g_pmd_available = pmd_is_resident();
 
     if (!g_pmd_available) {
-        puts("PMD.COM is not resident.");
-        puts("Please run PMD.COM before ADV98.EXE.");
-        return 1;
-        
+        debug_log("PMD.COM is not resident.");
+        debug_log("BGM commands will be ignored.");
     }
 
-    remove("debug.txt");
-    // debug_log("ADV98 START");
+
 
     // マウス常駐確認
-
     g_mouse_available = mouse98_init();
     if (!g_mouse_available) {
         puts("Mouse driver is not resident.");

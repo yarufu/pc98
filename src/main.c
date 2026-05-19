@@ -641,6 +641,8 @@ static void ui_draw_stand(enum StandId stand_id, enum FaceId face_id,
     }
 
     if (!graph98_draw_sprite_file_trans(sprite_path, x, y, 0)) {
+        debug_log("sprite load failed: %s", sprite_path);
+        
         // ui_draw_stand_placeholder(x, y);
         graph98_boxfill(x + 20, y + 20, x + 180, y + 80, 4);
         graph98_draw_string(x + 30, y + 45, "SPRITE LOAD NG", 15);

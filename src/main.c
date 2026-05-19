@@ -366,6 +366,7 @@ static void ui_draw_background(const char *bg_name)
         if (graph98_load_g98(path)) {
             return;
         }
+        debug_log("bg load failed: %s", path);
     }
 
     ui_draw_background_test();

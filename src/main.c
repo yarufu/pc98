@@ -1910,6 +1910,9 @@ static void run_script_sjis(void)
                 continue;
             }
 
+            // #seはコメントアウト
+            // BGM/SEはPMD(#bgm)に任せるため
+            /*
             if (strcmp(cmd, "#se") == 0) {
                 if (count >= 2) {
                     if (strcmp(arg1, "beep") == 0) {
@@ -1918,6 +1921,11 @@ static void run_script_sjis(void)
                         se86_play_beep2();
                     }
                 }
+                continue;
+            }
+            */
+            // 未知コマンド扱いで下に流れる可能性があるので、一応#seを無視する処理は入れておく
+            if (strcmp(cmd, "#se") == 0) {
                 continue;
             }
 
@@ -2384,7 +2392,10 @@ int main(void)
     text98_hide_cursor();
 
     graph98_init();
-    se86_init();
+
+    // 86音源初期化はコメントアウト
+    // BGMはPMDに任せるため
+    // se86_init();
 
     if (!graph98_load_palette_file("adv.pal")) {
         graph98_apply_adv_palette();

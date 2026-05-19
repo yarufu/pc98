@@ -16,6 +16,7 @@
 #label gym
 #set helped_mio
 #bg bg002
+#se beep
 [Œ’ˆê]
 ‚í‚©‚Á‚½B–l‚Å‚æ‚¯‚ê‚Îè“`‚¤‚æB
 

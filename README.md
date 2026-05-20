@@ -10,7 +10,9 @@ PC-98風ADVゲームを作成することを目的とした、
 
 ## 動画
 
-[![PC-98 ADV Engine](docs/youtube_thumb.png)](https://www.youtube.com/watch?v=tbKbpCH4YyY)
+<a href="https://www.youtube.com/watch?v=tbKbpCH4YyY">
+  <img src="docs/youtube_thumb.png" width="480">
+</a>
 
 ChatGPT と Codex を使って開発したPC-98 ADVゲームエンジンの実機動作動画です。
 

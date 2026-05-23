@@ -1,8 +1,13 @@
 #bg class
-#bgm opening.m
+#bgm kirakira.m
 #right character01 normal
 
-
-[美緒]
+[サンプル子]
 こんにちは。
+
+[サンプル子]
+こんばんわ
+
+[サンプル子]
+ごきげんよう
 

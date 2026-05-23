@@ -2405,10 +2405,14 @@ int main(void)
         graph98_apply_adv_palette();
     }
 
+    graph98_clear(0);
+    run_script_sjis();
+
 
     graph98_clear(0);
-
-    run_script_sjis();
+    text98_clear_screen();
+    debug_log("ADV98 END");
+    printf("ADV98.EXE finished.\n");
 
     return 0;
 }

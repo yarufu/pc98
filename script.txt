@@ -1,8 +1,9 @@
+#pal adv.pal
 #bg class
-#bgm kirakira.m
 #right character01 normal
 
 [サンプル子]
 こんにちは。
 
-
+[サンプル子]
+突

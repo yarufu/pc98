@@ -278,11 +278,14 @@ static void draw_string_kanji(int x, int y, const unsigned char **fonts, int cou
         return;
     }
 
+    // debug_log("draw_string_kanji start x=%d y=%d count=%d", x, y, count);
+
     for (i = 0; i < count; ++i) {
         if (fonts[i] != 0) {
             draw_kanji_16(x + (i * 16), y, fonts[i]);
         }
     }
+    // debug_log("draw_string_kanji done");
 }
 
 /*
@@ -723,8 +726,11 @@ static int ui_draw_message_page_jis(const uint16_t *name, int name_len,
         }
     }
 
+    // debug_log("draw_count=%d", draw_count);
     for (i = 0; i < draw_count; ++i) {
+        // debug_log("get_kanji_font: %04X", jis_codes[start_index + i]);
         get_kanji_font(jis_codes[start_index + i], font[i]);
+        // debug_log("get_kanji_font done: %04X", jis_codes[start_index + i]);
     }
 
     line1_count = draw_count;
@@ -796,25 +802,37 @@ static void ui_draw_message_jis(const uint16_t *name, int name_len,
 
     start_index = 0;
 
+
+    // debug_log("ui_draw_message_jis start count=%d", count);
+
     for (;;) {
+        // debug_log("message loop start start_index=%d count=%d", start_index, count);
         page_count = ui_draw_message_page_jis(name, name_len,
                                               jis_codes, count,
                                               start_index);
+                                              
+        // debug_log("page_count=%d start_index=%d", page_count, start_index);  
+                                            
         input_wait_key();
+        // debug_log("after input_wait_key");
 
         if (g_request_script_resume) {
+            // debug_log("break: g_request_script_resume");
             break;
         }
 
         if (page_count <= 0) {
+            // debug_log("break: page_count <= 0");
             break;
         }
 
         start_index += page_count;
         if (start_index >= count) {
+            // debug_log("start_index updated=%d", start_index);
             break;
         }
     }
+    // debug_log("ui_draw_message_jis end");
 }
 
 /*
@@ -1062,8 +1080,11 @@ static void input_wait_key(void)
 {
     uint8_t ch;
 
+
+    // debug_log("input_wait_key start");
+
     for (;;) {
-        if (mouse98_left_pressed()) {
+        if (g_mouse_available && mouse98_left_pressed()) {
             mouse98_wait_left_release();
             break;
         }
@@ -1100,6 +1121,7 @@ static void input_wait_key(void)
             break;  /* Enter */
         }
     }
+    // debug_log("input_wait_key done");
 }
 
 // キーボード、マウス入力監視

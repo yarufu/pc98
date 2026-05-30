@@ -13,7 +13,8 @@ Script-based PC-98 style adventure game engine for MS-DOS.
   <img src="docs/youtube_thumb.png" width="480">
 </a>
 
-ChatGPT と Codex を使って開発したPC-98 ADVゲームエンジンの実機動作動画です。
+ChatGPT と Codex を使って開発したPC-98 ADVゲームエンジンの実機動作動画です。<br>
+※画像をクリックするとyoutubeへ移動します。
 
 ## スクリーンショット
 

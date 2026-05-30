@@ -39,7 +39,6 @@ ADV98 は、ChatGPT と Codex の支援を受けながら開発しているPC-98
 
 https://github.com/yarufu/pc98/releases
 
-最新版の Release を開き、
 ADV98.zip をダウンロードしてください。
 
 または、GitHub画面右側の **Releases** よりダウンロードできます。

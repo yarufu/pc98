@@ -1,9 +1,7 @@
 #pal adv.pal
 #bg class
 #right character01 normal
+#left character02 normal
 
-[サンプル子]
-こんにちは。
-
-[サンプル子]
-突
+[健一]
+犯人はこの中にいる！

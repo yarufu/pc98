@@ -101,7 +101,9 @@ static int g_request_scene_redraw = 0;
 static int g_request_script_resume = 0;
 
 /* 関数宣言部 */
-static void input_wait_key(void);
+static int input_wait_key(void);
+static void ui_redraw_current_scene_from_state(void);
+static void ui_hide_message_window_until_resume(void);
 static void ui_draw_wait_mark(int x, int y, unsigned char color);
 static void text98_hide_cursor(void);
 static void text98_clear_screen(void);
@@ -813,7 +815,9 @@ static void ui_draw_message_jis(const uint16_t *name, int name_len,
                                               
         // debug_log("page_count=%d start_index=%d", page_count, start_index);  
                                             
-        input_wait_key();
+        if (!input_wait_key()) {
+            continue;
+        }
         // debug_log("after input_wait_key");
 
         if (g_request_script_resume) {
@@ -1075,8 +1079,42 @@ static void get_kanji_font(uint16_t jis_code, unsigned char *buffer)
     io_out8(PORT_CG_MODE, CG_MODE_CODE_ACCESS);
 }
 
+/* 現在の背景＋立ち絵を再描画する関数 */
+static void ui_redraw_current_scene_from_state(void)
+{
+    graph98_clear(0);
+    ui_draw_background(g_state.bg_name);
+    ui_draw_current_stands(g_state.left_stand, g_state.left_face,
+                           g_state.right_stand, g_state.right_face);
+}
+
+/* メッセージ非表示中の待機関数 */
+static void ui_hide_message_window_until_resume(void)
+{
+    uint8_t ch;
+
+    ui_redraw_current_scene_from_state();
+
+    for (;;) {
+        if (g_mouse_available && mouse98_left_pressed()) {
+            mouse98_wait_left_release();
+            break;
+        }
+
+        if (!input_key_available()) {
+            continue;
+        }
+
+        ch = input_read_key();
+        if (ch == 0x0D) {
+            break;
+        }
+    }
+}
+
+
 /* マウス（左クリック）、Enterキーが押されるまで待ちます。 */
-static void input_wait_key(void)
+static int input_wait_key(void)
 {
     uint8_t ch;
 
@@ -1086,7 +1124,7 @@ static void input_wait_key(void)
     for (;;) {
         if (g_mouse_available && mouse98_left_pressed()) {
             mouse98_wait_left_release();
-            break;
+            return 1;
         }
 
         if (!input_key_available()) {
@@ -1117,8 +1155,13 @@ static void input_wait_key(void)
             g_load_key_armed = 1;
         }
 
+        if (ch == 'H' || ch == 'h') {
+            ui_hide_message_window_until_resume();
+            return 0;
+        }
+
         if (ch == 0x0D) {
-            break;  /* Enter */
+            return 1;  /* Enter */
         }
     }
     // debug_log("input_wait_key done");
@@ -2177,7 +2220,9 @@ static void run_script_ascii(void)
 
         ui_draw_message_ascii(current_name, line);
 
-        input_wait_key();
+        if (!input_wait_key()) {
+            continue;
+        }
     }
 
     fclose(fp);

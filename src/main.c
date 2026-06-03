@@ -2123,7 +2123,7 @@ static void run_script_sjis(void)
                 g_state.right_stand == last_right_stand &&
                 g_state.right_face == last_right_face) {
 
-                debug_log("LEFT STAND PARTIAL UPDATE");
+                // debug_log("LEFT STAND PARTIAL UPDATE");
 
                 ui_refresh_left_stand_only(g_state.bg_name,
                                            g_state.left_stand,
@@ -2137,7 +2137,7 @@ static void run_script_sjis(void)
                        (g_state.right_stand != last_right_stand ||
                         g_state.right_face != last_right_face)) {
 
-                debug_log("RIGHT STAND PARTIAL UPDATE");
+                // debug_log("RIGHT STAND PARTIAL UPDATE");
 
                 ui_refresh_right_stand_only(g_state.bg_name,
                                             g_state.right_stand,
@@ -2148,7 +2148,7 @@ static void run_script_sjis(void)
 
             } else {
 
-                debug_log("STAND FULL REDRAW");
+                // debug_log("STAND FULL REDRAW");
 
 
                 ui_draw_background(g_state.bg_name);

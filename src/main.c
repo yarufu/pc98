@@ -1082,8 +1082,8 @@ static void get_kanji_font(uint16_t jis_code, unsigned char *buffer)
 /* 現在の背景＋立ち絵を再描画する関数 */
 static void ui_redraw_current_scene_from_state(void)
 {
-    graph98_clear(0);
     ui_draw_background(g_state.bg_name);
+
     ui_draw_current_stands(g_state.left_stand, g_state.left_face,
                            g_state.right_stand, g_state.right_face);
 }
@@ -1218,10 +1218,11 @@ static int input_wait_choice_cursor(const struct Message *msg,
 
     selected = 1;
 
+    graph98_clear(0);
+    ui_draw_background(current_bg_name);
+    ui_draw_stands_for_message(msg);
+
     for (;;) {
-        graph98_clear(0);
-        ui_draw_background(current_bg_name);
-        ui_draw_stands_for_message(msg);
         ui_draw_choice_jis(msg->choice1, msg->choice1_len,
                            msg->choice2, msg->choice2_len,
                            selected);
@@ -2097,7 +2098,7 @@ static void run_script_sjis(void)
         
         // 変化があれば部分的に再描画
         if (scene_dirty || strcmp(last_bg_name, g_state.bg_name) != 0) {
-            graph98_clear(0);
+
             ui_draw_background(g_state.bg_name);
             ui_draw_current_stands(g_state.left_stand, g_state.left_face,
                                    g_state.right_stand, g_state.right_face);
@@ -2150,7 +2151,7 @@ static void run_script_sjis(void)
 
                 debug_log("STAND FULL REDRAW");
 
-                graph98_clear(0);
+
                 ui_draw_background(g_state.bg_name);
                 ui_draw_current_stands(g_state.left_stand, g_state.left_face,
                                        g_state.right_stand, g_state.right_face);
@@ -2472,7 +2473,7 @@ int main(void)
         graph98_apply_adv_palette();
     }
 
-    graph98_clear(0);
+
     run_script_sjis();
 
 

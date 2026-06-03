@@ -1218,7 +1218,6 @@ static int input_wait_choice_cursor(const struct Message *msg,
 
     selected = 1;
 
-    graph98_clear(0);
     ui_draw_background(current_bg_name);
     ui_draw_stands_for_message(msg);
 

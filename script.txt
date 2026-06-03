@@ -1,14 +1,25 @@
 #pal adv.pal
 #bg class
 #bgm kirakira.m
-
-[健一]
-犯人はこの中にいる！
-
 #right character01 normal
-[]
-なんだってぇぇーー？
-
 #left character02 normal
+
+
+
+#choice route_a route_b
+手伝う
+断る
+
+#label route_a
+[健一]
+わかった。手伝うよ。
+#jump common
+
+#label route_b
+[健一]
+ごめん、今は少し難しいかも。
+#jump common
+
+#label common
 []
-いったい誰！？
+こうして、放課後の調査が始まった。

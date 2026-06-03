@@ -23,7 +23,7 @@
 #define GRAPH98_G98_MAGIC_2 '8'
 #define GRAPH98_G98_MAGIC_3 'B'
 #define GRAPH98_G98_VERSION 1u
-#define GRAPH98_G98_CHUNK_LINES 8u
+#define GRAPH98_G98_CHUNK_LINES 16u
 
 #define GRAPH98_SPRITE_MAGIC_0 'S'
 #define GRAPH98_SPRITE_MAGIC_1 'P'
@@ -437,10 +437,43 @@ void graph98_rect(int x0, int y0, int x1, int y1, unsigned char color)
     graph98_vline(x1, y0, y1, color);
 }
 
-void graph98_boxfill(int x0, int y0, int x1, int y1, unsigned char color)
+static void graph98_fill_byte_rect(int byte_x0, int byte_x1,
+                                      int y0, int y1,
+                                      uint8_t blue_value,
+                                      uint8_t red_value,
+                                      uint8_t green_value,
+                                      uint8_t intens_value)
 {
     int y;
+
+    for (y = y0; y <= y1; ++y) {
+        uint16_t offset;
+        int bx;
+
+        offset = (uint16_t)(y * GRAPH98_BYTES_PER_LINE + byte_x0);
+        for (bx = byte_x0; bx <= byte_x1; ++bx) {
+            uint16_t p;
+
+            p = (uint16_t)(offset + (bx - byte_x0));
+            GRAPH98_VRAM_BLUE[p] = blue_value;
+            GRAPH98_VRAM_RED[p] = red_value;
+            GRAPH98_VRAM_GREEN[p] = green_value;
+            GRAPH98_VRAM_INTENS[p] = intens_value;
+        }
+    }
+}
+
+void graph98_boxfill(int x0, int y0, int x1, int y1, unsigned char color)
+{
     int tmp;
+    int byte_x0;
+    int byte_x1;
+    int left_aligned_x;
+    int right_aligned_x;
+    uint8_t blue_value;
+    uint8_t red_value;
+    uint8_t green_value;
+    uint8_t intens_value;
 
     if (x0 > x1) {
         tmp = x0;
@@ -458,6 +491,12 @@ void graph98_boxfill(int x0, int y0, int x1, int y1, unsigned char color)
         return;
     }
 
+    if (x0 < 0) {
+        x0 = 0;
+    }
+    if (x1 >= GRAPH98_WIDTH) {
+        x1 = GRAPH98_WIDTH - 1;
+    }
     if (y0 < 0) {
         y0 = 0;
     }
@@ -465,8 +504,66 @@ void graph98_boxfill(int x0, int y0, int x1, int y1, unsigned char color)
         y1 = GRAPH98_HEIGHT - 1;
     }
 
-    for (y = y0; y <= y1; ++y) {
-        graph98_hline(x0, x1, y, color);
+    color &= 0x0Fu;
+
+    /*
+     * PC-98 の 16 色画面は 8 ドットで 1 バイトです。
+     * 左右端が 8 ドット境界に乗っている矩形は、graph98_pset() を通さず
+     * VRAMへ1バイトずつ直接書くとかなり軽くなります。
+     */
+    if ((x0 & 7) == 0 && (x1 & 7) == 7) {
+        byte_x0 = x0 >> 3;
+        byte_x1 = x1 >> 3;
+
+        blue_value  = (color & 0x01u) ? 0xFFu : 0x00u;
+        red_value   = (color & 0x02u) ? 0xFFu : 0x00u;
+        green_value = (color & 0x04u) ? 0xFFu : 0x00u;
+        intens_value = (color & 0x08u) ? 0xFFu : 0x00u;
+
+        graph98_fill_byte_rect(byte_x0, byte_x1, y0, y1,
+                               blue_value, red_value,
+                               green_value, intens_value);
+        return;
+    }
+
+    /*
+     * 左右端だけ従来通りドット描画し、中央の8ドット境界部分だけ高速化します。
+     * 表示結果は従来の boxfill と同じです。
+     */
+    left_aligned_x = (x0 + 7) & ~7;
+    right_aligned_x = (x1 + 1) & ~7;
+
+    if (left_aligned_x <= right_aligned_x - 1) {
+        int y;
+
+        if (x0 < left_aligned_x) {
+            for (y = y0; y <= y1; ++y) {
+                graph98_hline(x0, left_aligned_x - 1, y, color);
+            }
+        }
+
+        byte_x0 = left_aligned_x >> 3;
+        byte_x1 = (right_aligned_x >> 3) - 1;
+
+        blue_value  = (color & 0x01u) ? 0xFFu : 0x00u;
+        red_value   = (color & 0x02u) ? 0xFFu : 0x00u;
+        green_value = (color & 0x04u) ? 0xFFu : 0x00u;
+        intens_value = (color & 0x08u) ? 0xFFu : 0x00u;
+
+        graph98_fill_byte_rect(byte_x0, byte_x1, y0, y1,
+                               blue_value, red_value,
+                               green_value, intens_value);
+
+        if (right_aligned_x <= x1) {
+            for (y = y0; y <= y1; ++y) {
+                graph98_hline(right_aligned_x, x1, y, color);
+            }
+        }
+        return;
+    }
+
+    for (tmp = y0; tmp <= y1; ++tmp) {
+        graph98_hline(x0, x1, tmp, color);
     }
 }
 
@@ -628,7 +725,7 @@ static int graph98_copy_plane_rect_from_file(FILE *fp,
                                              int x1,
                                              int y1)
 {
-    static uint8_t row_buffer[80];
+    static uint8_t row_buffer[GRAPH98_BYTES_PER_LINE];
     int y;
     int byte_x0;
     int byte_x1;
@@ -640,26 +737,30 @@ static int graph98_copy_plane_rect_from_file(FILE *fp,
     byte_x1 = x1 >> 3;
     bytes = byte_x1 - byte_x0 + 1;
 
-    if (bytes <= 0 || bytes > 80) {
+    if (bytes <= 0 || bytes > GRAPH98_BYTES_PER_LINE) {
+        return 0;
+    }
+
+    /*
+     * 旧版は 1 行ごとに fseek していました。
+     * PC-98 の DOS 環境では fseek の回数が重いので、各プレーンで最初に1回だけ seek し、
+     * 以後は 80 バイトずつ順番に読んで必要な範囲だけ VRAM へ戻します。
+     */
+    pos = plane_start + (unsigned long)y0 * GRAPH98_BYTES_PER_LINE;
+    if (fseek(fp, pos, SEEK_SET) != 0) {
         return 0;
     }
 
     for (y = y0; y <= y1; ++y) {
-        pos = plane_start +
-              (unsigned long)y * GRAPH98_BYTES_PER_LINE +
-              (unsigned long)byte_x0;
+        uint16_t dst_offset;
 
-        if (fseek(fp, pos, SEEK_SET) != 0) {
+        if (fread(row_buffer, 1u, GRAPH98_BYTES_PER_LINE, fp) != GRAPH98_BYTES_PER_LINE) {
             return 0;
         }
 
-        if (fread(row_buffer, 1u, (size_t)bytes, fp) != (size_t)bytes) {
-            return 0;
-        }
-
+        dst_offset = (uint16_t)(y * GRAPH98_BYTES_PER_LINE + byte_x0);
         for (i = 0; i < bytes; ++i) {
-            plane[(uint16_t)(y * GRAPH98_BYTES_PER_LINE + byte_x0 + i)] =
-                row_buffer[i];
+            plane[(uint16_t)(dst_offset + i)] = row_buffer[byte_x0 + i];
         }
     }
 

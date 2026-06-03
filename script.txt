@@ -1,11 +1,14 @@
 #pal adv.pal
 #bg class
-#right character01 normal
-#left character02 normal
 #bgm kirakira.m
 
 [健一]
 犯人はこの中にいる！
 
+#right character01 normal
 []
 なんだってぇぇーー？
+
+#left character02 normal
+[]
+いったい誰！？

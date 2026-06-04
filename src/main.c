@@ -366,17 +366,17 @@ static void ui_set_message_box(int x0, int y0, int x1, int y1)
     g_msg_line2_y = g_msgbox_y0 + 32;
     g_msg_line3_y = g_msgbox_y0 + 56;
 
-    g_choice_line1_y = g_msgbox_y0 + 28;
-    g_choice_line2_y = g_msgbox_y0 + 52;
+    g_choice_line1_y = g_msgbox_y0 + 12;
+    g_choice_line2_y = g_msgbox_y0 + 34;
     g_choice_text_x = g_msgbox_x0 + 51;
     g_choice_cursor_x = g_msgbox_x0 + 19;
 
     g_choice_band_x0 = g_msgbox_x0 + 31;
     g_choice_band_x1 = g_msgbox_x1 - 31;
 
-    g_choice_band1_y0 = g_choice_line1_y - 4;
+    g_choice_band1_y0 = g_choice_line1_y;
     g_choice_band1_y1 = g_choice_line1_y + 15;
-    g_choice_band2_y0 = g_choice_line2_y - 4;
+    g_choice_band2_y0 = g_choice_line2_y;
     g_choice_band2_y1 = g_choice_line2_y + 15;
 }
 

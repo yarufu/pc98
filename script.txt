@@ -1,25 +1,10 @@
 #pal adv.pal
 #bg class
-#bgm kirakira.m
-#right character01 normal
-#left character02 normal
+#msgbox 74 300 620 390
 
-
+[サンプル子]
+メッセージボックス位置変更テストです。
 
 #choice route_a route_b
 手伝う
 断る
-
-#label route_a
-[健一]
-わかった。手伝うよ。
-#jump common
-
-#label route_b
-[健一]
-ごめん、今は少し難しいかも。
-#jump common
-
-#label common
-[]
-こうして、放課後の調査が始まった。

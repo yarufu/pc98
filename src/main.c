@@ -100,6 +100,43 @@ static int g_load_key_armed = 1;
 static int g_request_scene_redraw = 0;
 static int g_request_script_resume = 0;
 
+/* メッセージボックス座標。初期値は従来と同じ */
+/*
+static int g_msgbox_x0 = 109;
+static int g_msgbox_y0 = 313;
+static int g_msgbox_x1 = 531;
+static int g_msgbox_y1 = 392;
+
+static int g_msg_text_x = 116;
+static int g_msg_line1_y = 321;
+static int g_msg_line2_y = 345;
+static int g_msg_line3_y = 369;
+*/
+
+static int g_msgbox_x0 = 50;
+static int g_msgbox_y0 = 300;
+static int g_msgbox_x1 = 620;
+static int g_msgbox_y1 = 390;
+
+static int g_msg_text_x = 57;
+static int g_msg_line1_y = 308;
+static int g_msg_line2_y = 332;
+static int g_msg_line3_y = 356;
+
+
+static int g_choice_line1_y = 317;
+static int g_choice_line2_y = 339;
+static int g_choice_text_x = 160;
+static int g_choice_cursor_x = 128;
+static int g_choice_band_x0 = 140;
+static int g_choice_band_x1 = 500;
+static int g_choice_band1_y0 = 313;
+static int g_choice_band1_y1 = 332;
+static int g_choice_band2_y0 = 337;
+static int g_choice_band2_y1 = 354;
+
+
+
 /* 関数宣言部 */
 static int input_wait_key(void);
 static void ui_redraw_current_scene_from_state(void);
@@ -113,6 +150,7 @@ static void io_out8(uint16_t port, uint8_t value);
 static void get_kanji_font(uint16_t jis_code, unsigned char *buffer);
 static void ui_draw_background(const char *bg_name);
 static void ui_draw_message_window(void);
+static void ui_set_message_box(int x0, int y0, int x1, int y1);
 static void ui_draw_background_test(void);
 static const char *ui_get_stand_sprite_path(enum StandId stand_id,
                                             enum FaceId face_id,
@@ -309,6 +347,41 @@ static void ui_draw_cursor_triangle(int x, int y, unsigned char color)
     graph98_hline(x,     x,     y + 8, color);
 }
 
+
+static void ui_set_message_box(int x0, int y0, int x1, int y1)
+{
+    if (x0 < 0 || y0 < 0 || x1 >= 640 || y1 >= 400) {
+        return;
+    }
+    if (x1 <= x0 || y1 <= y0) {
+        return;
+    }
+
+    g_msgbox_x0 = x0;
+    g_msgbox_y0 = y0;
+    g_msgbox_x1 = x1;
+    g_msgbox_y1 = y1;
+
+    g_msg_text_x = g_msgbox_x0 + 7;
+    g_msg_line1_y = g_msgbox_y0 + 8;
+    g_msg_line2_y = g_msgbox_y0 + 32;
+    g_msg_line3_y = g_msgbox_y0 + 56;
+
+    g_choice_line1_y = g_msgbox_y0 + 28;
+    g_choice_line2_y = g_msgbox_y0 + 52;
+    g_choice_text_x = g_msgbox_x0 + 51;
+    g_choice_cursor_x = g_msgbox_x0 + 19;
+
+    g_choice_band_x0 = g_msgbox_x0 + 31;
+    g_choice_band_x1 = g_msgbox_x1 - 31;
+
+    g_choice_band1_y0 = g_choice_line1_y - 4;
+    g_choice_band1_y1 = g_choice_line1_y + 15;
+    g_choice_band2_y0 = g_choice_line2_y - 4;
+    g_choice_band2_y1 = g_choice_line2_y + 15;
+}
+
+
 static void ui_draw_message_window(void)
 {
     /* 外枠 */
@@ -319,8 +392,9 @@ static void ui_draw_message_window(void)
     // graph98_boxfill(96, 313, 543, 386, 0);
     // graph98_boxfill(92, 313, 544, 392, 0); 26文字メッセージ枠
     // graph98_boxfill(92, 313, 516, 392, 0);
-    graph98_boxfill(109, 313, 531, 392, 0);
     // graph98_rect(96, 308, 543, 381, 8);
+    // graph98_boxfill(109, 313, 531, 392, 0);
+    graph98_boxfill(g_msgbox_x0, g_msgbox_y0, g_msgbox_x1, g_msgbox_y1, 0);
 }
 
 static void build_bg_path(const char *bg_name, char *path, int path_size)
@@ -676,11 +750,6 @@ static int ui_draw_message_page_jis(const uint16_t *name, int name_len,
     //static const int message_line1_y = 323;
     //static const int message_line2_y = 347;
     //static const int message_line3_y = 371;
-    static const int message_line1_y = 321;
-    static const int message_line2_y = 345;
-    static const int message_line3_y = 369;
-
-
 
     static unsigned char bracket_font0[32];
     static unsigned char bracket_font1[32];
@@ -698,6 +767,9 @@ static int ui_draw_message_page_jis(const uint16_t *name, int name_len,
     int line3_count;
     int draw_count;
     int remaining_count;
+    int message_line1_y;
+    int message_line2_y;
+    int message_line3_y;
     int text_x;
 
     ui_draw_message_window();
@@ -750,7 +822,10 @@ static int ui_draw_message_page_jis(const uint16_t *name, int name_len,
         line3_count = message_line_chars;
     }
 
-    text_x = 124;
+    message_line1_y = g_msg_line1_y;
+    message_line2_y = g_msg_line2_y;
+    message_line3_y = g_msg_line3_y;
+    text_x = g_msg_text_x;
 
     if (name != 0 && name_draw_count > 0) {
         get_kanji_font(jis_left_bracket, bracket_font0);
@@ -764,9 +839,9 @@ static int ui_draw_message_page_jis(const uint16_t *name, int name_len,
         get_kanji_font(jis_right_bracket, bracket_font1);
         name_text[name_draw_count + 1] = bracket_font1;
 
-        draw_string_kanji(116, message_line1_y, name_text, name_draw_count + 2);
+        draw_string_kanji(g_msg_text_x, message_line1_y, name_text, name_draw_count + 2);
 
-        text_x = 116 + (name_draw_count + 2) * 16 + 8;
+        text_x = g_msg_text_x + (name_draw_count + 2) * 16 + 8;
     }
 
     for (i = 0; i < line1_count; ++i) {
@@ -783,10 +858,10 @@ static int ui_draw_message_page_jis(const uint16_t *name, int name_len,
         draw_string_kanji(text_x, message_line1_y, line1, line1_count);
     }
     if (line2_count > 0) {
-        draw_string_kanji(116, message_line2_y, line2, line2_count);
+        draw_string_kanji(g_msg_text_x, message_line2_y, line2, line2_count);
     }
     if (line3_count > 0) {
-        draw_string_kanji(116, message_line3_y, line3, line3_count);
+        draw_string_kanji(g_msg_text_x, message_line3_y, line3, line3_count);
     }
 
 
@@ -854,10 +929,6 @@ static void ui_draw_choice_jis(const uint16_t *choice1, int choice1_len,
                                const uint16_t *choice2, int choice2_len,
                                int selected)
 {
-    static const int choice_line1_y = 317;
-    static const int choice_line2_y = 339;
-    static const int choice_text_x = 160;
-    static const int choice_cursor_x = 128;
 
     static unsigned char choice1_font0[32];
     static unsigned char choice1_font1[32];
@@ -882,6 +953,16 @@ static void ui_draw_choice_jis(const uint16_t *choice1, int choice1_len,
     int draw_count1;
     int draw_count2;
 
+    int choice_line1_y;
+    int choice_line2_y;
+    int choice_text_x;
+    int choice_cursor_x;
+
+    choice_line1_y = g_choice_line1_y;
+    choice_line2_y = g_choice_line2_y;
+    choice_text_x = g_choice_text_x;
+    choice_cursor_x = g_choice_cursor_x;
+
     /*
      * 選択肢中は右上の別ウィンドウを使わず、
      * 下部メッセージウィンドウをそのまま使います。
@@ -891,10 +972,18 @@ static void ui_draw_choice_jis(const uint16_t *choice1, int choice1_len,
 
     /* 選択中の行に帯を描く */
     if (selected == 1) {
-        graph98_boxfill(140, 313, 500, 332, 15);
+        graph98_boxfill(g_choice_band_x0,
+                        g_choice_band1_y0,
+                        g_choice_band_x1,
+                        g_choice_band1_y1,
+                        15);
     }
     if (selected == 2) {
-        graph98_boxfill(140, 337, 500, 354, 15);
+        graph98_boxfill(g_choice_band_x0,
+                        g_choice_band2_y0,
+                        g_choice_band_x1,
+                        g_choice_band2_y1,
+                        15);
     }
 
     /*
@@ -2289,13 +2378,24 @@ static void process_command_line(const char *line,
     char cmd[32];
     char arg1[32];
     char arg2[32];
+    char arg3[32];
+    char arg4[32];
     int count;
 
     cmd[0] = '\0';
     arg1[0] = '\0';
     arg2[0] = '\0';
+    arg3[0] = '\0';
+    arg4[0] = '\0';
 
-    count = sscanf(line, "%31s %31s %31s", cmd, arg1, arg2);
+    count = sscanf(line,
+                   "%31s %31s %31s %31s %31s",
+                   cmd,
+                   arg1,
+                   arg2,
+                   arg3,
+                   arg4);
+
     if (count <= 0) {
         return;
     }
@@ -2307,6 +2407,25 @@ static void process_command_line(const char *line,
         }
         return;
     }
+
+    if (strcmp(cmd, "#msgbox") == 0) {
+        int x0;
+        int y0;
+        int x1;
+        int y1;
+
+        if (count >= 5) {
+            x0 = atoi(arg1);
+            y0 = atoi(arg2);
+            x1 = atoi(arg3);
+            y1 = atoi(arg4);
+
+            ui_set_message_box(x0, y0, x1, y1);
+        }
+        return;
+    }
+
+
 
     if (strcmp(cmd, "#left") == 0) {
         if (count >= 2) {

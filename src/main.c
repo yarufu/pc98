@@ -101,7 +101,6 @@ static int g_request_scene_redraw = 0;
 static int g_request_script_resume = 0;
 
 /* メッセージボックス座標。初期値は従来と同じ */
-/*
 static int g_msgbox_x0 = 109;
 static int g_msgbox_y0 = 313;
 static int g_msgbox_x1 = 531;
@@ -111,8 +110,8 @@ static int g_msg_text_x = 116;
 static int g_msg_line1_y = 321;
 static int g_msg_line2_y = 345;
 static int g_msg_line3_y = 369;
-*/
 
+/*
 static int g_msgbox_x0 = 50;
 static int g_msgbox_y0 = 300;
 static int g_msgbox_x1 = 620;
@@ -122,7 +121,7 @@ static int g_msg_text_x = 57;
 static int g_msg_line1_y = 308;
 static int g_msg_line2_y = 332;
 static int g_msg_line3_y = 356;
-
+*/
 
 static int g_choice_line1_y = 317;
 static int g_choice_line2_y = 339;

@@ -10,7 +10,6 @@
 #include <stdlib.h>
 #include <stdarg.h>
 
-
 #define PORT_CG_MODE   0x0068
 #define PORT_KANJI_LSB 0x00A1
 #define PORT_KANJI_MSB 0x00A3
@@ -732,11 +731,13 @@ static void ui_draw_stand_placeholder(int x, int y)
 static void ui_draw_stand(enum StandId stand_id, enum FaceId face_id,
                           int x, int y, int facing_left)
 {
+
     const char *sprite_path;
 
     if (stand_id == STAND_NONE) {
         return;
     }
+
 
     /*
      * 立ち絵ファイルのパスを決めてから透過付きで描画します。
@@ -747,6 +748,8 @@ static void ui_draw_stand(enum StandId stand_id, enum FaceId face_id,
         return;
     }
 
+
+
     if (!graph98_draw_sprite_file_trans(sprite_path, x, y, 0)) {
         debug_log("sprite load failed: %s", sprite_path);
 
@@ -755,6 +758,9 @@ static void ui_draw_stand(enum StandId stand_id, enum FaceId face_id,
         graph98_draw_string(x + 30, y + 45, "SPRITE LOAD NG", 15);
 
     }
+
+
+
 }
 
 static void ui_draw_stands_for_message(const struct Message *msg)

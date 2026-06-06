@@ -150,6 +150,7 @@ static void get_kanji_font(uint16_t jis_code, unsigned char *buffer);
 static void ui_draw_background(const char *bg_name);
 static void ui_draw_message_window(void);
 static void ui_set_message_box(int x0, int y0, int x1, int y1);
+static int ui_get_message_line_chars(void);
 static void ui_draw_background_test(void);
 static const char *ui_get_stand_sprite_path(enum StandId stand_id,
                                             enum FaceId face_id,
@@ -378,6 +379,34 @@ static void ui_set_message_box(int x0, int y0, int x1, int y1)
     g_choice_band1_y1 = g_choice_line1_y + 15;
     g_choice_band2_y0 = g_choice_line2_y;
     g_choice_band2_y1 = g_choice_line2_y + 15;
+}
+
+static int ui_get_message_line_chars(void)
+{
+    int usable_width;
+    int chars;
+
+    /*
+     * 全角16x16前提。
+     * 右側に1文字ぶん余白を残す。
+     * 初期値 109,313,531,392 では従来どおり 25 文字になる。
+     */
+    usable_width = g_msgbox_x1 - g_msg_text_x + 1 - 16;
+    chars = usable_width / 16;
+
+    if (chars < 1) {
+        chars = 1;
+    }
+
+    /*
+     * 640px幅でも最大40文字程度。
+     * 配列サイズ保護のため上限を付ける。
+     */
+    if (chars > 40) {
+        chars = 40;
+    }
+
+    return chars;
 }
 
 
@@ -744,20 +773,16 @@ static int ui_draw_message_page_jis(const uint16_t *name, int name_len,
 {
     static const uint16_t jis_left_bracket = 0x215A;   /* 【 */
     static const uint16_t jis_right_bracket = 0x215B;  /* 】 */
-    static const int message_line_chars = 25;
     static const int message_max_lines = 3;
-    //static const int message_line1_y = 323;
-    //static const int message_line2_y = 347;
-    //static const int message_line3_y = 371;
-
     static unsigned char bracket_font0[32];
     static unsigned char bracket_font1[32];
     static unsigned char name_font[26][32];
     static const unsigned char *name_text[28];
-    static unsigned char font[78][32];
-    static const unsigned char *line1[26];
-    static const unsigned char *line2[26];
-    static const unsigned char *line3[26];
+    static unsigned char font[120][32];
+    static const unsigned char *line1[40];
+    static const unsigned char *line2[40];
+    static const unsigned char *line3[40];
+
     int i;
     int name_draw_count;
     int line1_text_limit;
@@ -770,8 +795,12 @@ static int ui_draw_message_page_jis(const uint16_t *name, int name_len,
     int message_line2_y;
     int message_line3_y;
     int text_x;
+    int message_line_chars;
+
+
 
     ui_draw_message_window();
+    message_line_chars = ui_get_message_line_chars();
 
     name_draw_count = name_len;
     if (name_draw_count < 0) {

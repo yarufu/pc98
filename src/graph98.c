@@ -25,6 +25,9 @@
 #define GRAPH98_G98_VERSION 1u
 #define GRAPH98_G98_CHUNK_LINES 32u
 
+#define GRAPH98_SPRITE_CHUNK_LINES 32u
+#define GRAPH98_SPRITE_MAX_WIDTH 256u
+
 #define GRAPH98_SPRITE_MAGIC_0 'S'
 #define GRAPH98_SPRITE_MAGIC_1 'P'
 #define GRAPH98_SPRITE_MAGIC_2 'R'
@@ -838,18 +841,15 @@ int graph98_load_g98_rect(const char *path, int x0, int y0, int x1, int y1)
     return ok;
 }
 
+
 int graph98_draw_sprite_file_trans(const char *path, int x, int y,
                                    unsigned char transparent_color)
 {
     struct graph98_sprite_header header;
     FILE *fp;
-    uint8_t row_buffer[256];
+    static uint8_t buffer[GRAPH98_SPRITE_MAX_WIDTH * GRAPH98_SPRITE_CHUNK_LINES];
     uint16_t src_y;
 
-    /*
-     * 画像全体を一度に確保せず、1行ずつ読んで描画します。
-     * その代わり、この簡易版では幅を 256 以下に制限します。
-     */
     fp = fopen(path, "rb");
     if (fp == 0) {
         return 0;
@@ -878,43 +878,59 @@ int graph98_draw_sprite_file_trans(const char *path, int x, int y,
         return 0;
     }
 
-    if (header.width > sizeof(row_buffer)) {
+    if (header.width > GRAPH98_SPRITE_MAX_WIDTH) {
         fclose(fp);
         return 0;
     }
 
     transparent_color &= 0x0Fu;
 
-    for (src_y = 0; src_y < header.height; ++src_y) {
-        uint16_t src_x;
-        int dst_y;
+    src_y = 0;
+    while (src_y < header.height) {
+        uint16_t chunk_lines;
+        uint16_t line;
 
-        if (fread(row_buffer, 1u, header.width, fp) != header.width) {
+        chunk_lines = (uint16_t)(header.height - src_y);
+        if (chunk_lines > GRAPH98_SPRITE_CHUNK_LINES) {
+            chunk_lines = GRAPH98_SPRITE_CHUNK_LINES;
+        }
+
+        if (fread(buffer, header.width, chunk_lines, fp) != chunk_lines) {
             fclose(fp);
             return 0;
         }
 
-        dst_y = y + (int)src_y;
-        if (dst_y < 0 || dst_y >= GRAPH98_HEIGHT) {
-            continue;
-        }
+        for (line = 0; line < chunk_lines; ++line) {
+            uint16_t src_x;
+            int dst_y;
+            uint8_t *row;
 
-        for (src_x = 0; src_x < header.width; ++src_x) {
-            unsigned char color;
-            int dst_x;
-
-            color = (unsigned char)(row_buffer[src_x] & 0x0Fu);
-            if (color == transparent_color) {
+            dst_y = y + (int)src_y + (int)line;
+            if (dst_y < 0 || dst_y >= GRAPH98_HEIGHT) {
                 continue;
             }
 
-            dst_x = x + (int)src_x;
-            if (dst_x < 0 || dst_x >= GRAPH98_WIDTH) {
-                continue;
-            }
+            row = buffer + (uint16_t)(header.width * line);
 
-            graph98_pset(dst_x, dst_y, color);
+            for (src_x = 0; src_x < header.width; ++src_x) {
+                unsigned char color;
+                int dst_x;
+
+                color = (unsigned char)(row[src_x] & 0x0Fu);
+                if (color == transparent_color) {
+                    continue;
+                }
+
+                dst_x = x + (int)src_x;
+                if (dst_x < 0 || dst_x >= GRAPH98_WIDTH) {
+                    continue;
+                }
+
+                graph98_pset(dst_x, dst_y, color);
+            }
         }
+
+        src_y = (uint16_t)(src_y + chunk_lines);
     }
 
     fclose(fp);

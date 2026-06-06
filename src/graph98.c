@@ -1012,6 +1012,168 @@ int graph98_draw_sprite_file_trans(const char *path, int x, int y,
     return 1;
 }
 
+static int graph98_draw_sprite_file_trans_range(FILE *fp,
+                                                const struct graph98_sprite_header *header,
+                                                uint8_t *buffer,
+                                                int x,
+                                                int y,
+                                                unsigned char transparent_color,
+                                                uint16_t src_y,
+                                                uint16_t lines)
+{
+    unsigned long pos;
+    uint16_t done;
+
+    if (lines == 0) {
+        return 1;
+    }
+
+    pos = 9UL + (unsigned long)src_y * (unsigned long)header->width;
+    if (fseek(fp, pos, SEEK_SET) != 0) {
+        return 0;
+    }
+
+    done = 0;
+    while (done < lines) {
+        uint16_t chunk_lines;
+        uint16_t line;
+
+        chunk_lines = (uint16_t)(lines - done);
+        if (chunk_lines > GRAPH98_SPRITE_CHUNK_LINES) {
+            chunk_lines = GRAPH98_SPRITE_CHUNK_LINES;
+        }
+
+        if (fread(buffer, header->width, chunk_lines, fp) != chunk_lines) {
+            return 0;
+        }
+
+        for (line = 0; line < chunk_lines; ++line) {
+            uint8_t *row;
+            int dst_y;
+            int src_start;
+            int draw_width;
+            int draw_x;
+
+            dst_y = y + (int)src_y + (int)done + (int)line;
+            if (dst_y < 0 || dst_y >= GRAPH98_HEIGHT) {
+                continue;
+            }
+
+            row = buffer + (uint16_t)(header->width * line);
+            src_start = 0;
+            draw_width = (int)header->width;
+            draw_x = x;
+
+            if (draw_x < 0) {
+                src_start = -draw_x;
+                draw_width -= src_start;
+                draw_x = 0;
+            }
+
+            if (draw_x + draw_width > GRAPH98_WIDTH) {
+                draw_width = GRAPH98_WIDTH - draw_x;
+            }
+
+            if (draw_width > 0) {
+                graph98_draw_sprite_line_trans_fast(row,
+                                                    src_start,
+                                                    draw_width,
+                                                    draw_x,
+                                                    dst_y,
+                                                    transparent_color);
+            }
+        }
+
+        done = (uint16_t)(done + chunk_lines);
+    }
+
+    return 1;
+}
+
+int graph98_draw_sprite_file_trans_center_wipe(const char *path, int x, int y,
+                                               unsigned char transparent_color,
+                                               int step_lines)
+{
+    struct graph98_sprite_header header;
+    FILE *fp;
+    static uint8_t buffer[GRAPH98_SPRITE_MAX_WIDTH * GRAPH98_SPRITE_CHUNK_LINES];
+    uint16_t revealed;
+    uint16_t step;
+
+    fp = fopen(path, "rb");
+    if (fp == 0) {
+        return 0;
+    }
+
+    if (!graph98_read_sprite_header(fp, &header)) {
+        fclose(fp);
+        return 0;
+    }
+
+    if (header.magic[0] != GRAPH98_SPRITE_MAGIC_0 ||
+        header.magic[1] != GRAPH98_SPRITE_MAGIC_1 ||
+        header.magic[2] != GRAPH98_SPRITE_MAGIC_2 ||
+        header.magic[3] != GRAPH98_SPRITE_MAGIC_3 ||
+        header.version != GRAPH98_SPRITE_VERSION ||
+        header.width == 0 ||
+        header.height == 0 ||
+        header.width > GRAPH98_SPRITE_MAX_WIDTH) {
+        fclose(fp);
+        return 0;
+    }
+
+    transparent_color &= 0x0Fu;
+    if (step_lines <= 0) {
+        step_lines = 2;
+    }
+    step = (uint16_t)step_lines;
+
+    revealed = 0;
+    while ((unsigned long)revealed * 2UL < (unsigned long)header.height) {
+        uint16_t gap;
+        uint16_t top_lines;
+        uint16_t bottom_lines;
+        uint16_t bottom_y;
+
+        gap = (uint16_t)((unsigned long)header.height -
+                         (unsigned long)revealed * 2UL);
+
+        top_lines = step;
+        if (top_lines > gap) {
+            top_lines = gap;
+        }
+
+        if (!graph98_draw_sprite_file_trans_range(fp, &header, buffer,
+                                                  x, y, transparent_color,
+                                                  revealed, top_lines)) {
+            fclose(fp);
+            return 0;
+        }
+
+        gap = (uint16_t)(gap - top_lines);
+        bottom_lines = step;
+        if (bottom_lines > gap) {
+            bottom_lines = gap;
+        }
+
+        if (bottom_lines > 0) {
+            bottom_y = (uint16_t)(header.height - revealed - bottom_lines);
+            if (!graph98_draw_sprite_file_trans_range(fp, &header, buffer,
+                                                      x, y, transparent_color,
+                                                      bottom_y, bottom_lines)) {
+                fclose(fp);
+                return 0;
+            }
+        }
+
+        graph98_wait_vsync();
+        revealed = (uint16_t)(revealed + step);
+    }
+
+    fclose(fp);
+    return 1;
+}
+
 void graph98_draw_digit(int x, int y, int digit, unsigned char color)
 {
     int row;

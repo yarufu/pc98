@@ -1,7 +1,6 @@
 #pal adv.pal
 #bg class
 #bgm kirakira.m
-#right character02 normal
 
 [金田一]
 犯人はこの中にいる！
@@ -15,7 +14,7 @@
 先生が証人だ。よって犯行は不可能！
 美緒、君は除外だ
 
-
+#rightwipe character02 normal
 [美緒]
 最初から被害者なんだけどね
 

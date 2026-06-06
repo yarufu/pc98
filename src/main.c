@@ -194,6 +194,9 @@ static void ui_restore_stand_background_rect(int x0, int y0, int x1, int y1, con
 static void ui_refresh_left_stand_only(const char *bg_name,
                                        enum StandId left_stand,
                                        enum FaceId left_face);
+static void ui_refresh_left_stand_only_wipe(const char *bg_name,
+                                            enum StandId left_stand,
+                                            enum FaceId left_face);
 static void ui_refresh_right_stand_only(const char *bg_name,
                                         enum StandId right_stand,
                                         enum FaceId right_face);
@@ -674,6 +677,18 @@ static void ui_refresh_left_stand_only(const char *bg_name,
                                      STAND_Y + STAND_H - 1,
                                      bg_name);
     ui_draw_stand(left_stand, left_face, STAND_LEFT_X, STAND_Y, 0);
+}
+
+static void ui_refresh_left_stand_only_wipe(const char *bg_name,
+                                            enum StandId left_stand,
+                                            enum FaceId left_face)
+{
+    ui_restore_stand_background_rect(STAND_LEFT_X,
+                                     STAND_Y,
+                                     STAND_LEFT_X + STAND_W - 1,
+                                     STAND_Y + STAND_H - 1,
+                                     bg_name);
+    ui_draw_stand_center_wipe(left_stand, left_face, STAND_LEFT_X, STAND_Y, 0);
 }
 
 static void ui_refresh_right_stand_only(const char *bg_name,
@@ -1989,10 +2004,12 @@ static void run_script_sjis(void)
     int scene_dirty;
 
     int stand_dirty;
+    int left_wipe_pending;
     int right_wipe_pending;
     
     
     stand_dirty = 0;
+    left_wipe_pending = 0;
     right_wipe_pending = 0;
     script_line = 0;
 
@@ -2025,6 +2042,7 @@ static void run_script_sjis(void)
                                current_name, sizeof(current_name));
             scene_dirty = 1;
             stand_dirty = 0;
+            left_wipe_pending = 0;
             right_wipe_pending = 0;
             g_request_scene_redraw = 0;
             g_request_script_resume = 0;
@@ -2218,7 +2236,11 @@ static void run_script_sjis(void)
                 old_right_face = g_state.right_face;
 
                 if (count >= 2) {
-                    if (strcmp(cmd, "#rightwipe") == 0) {
+                    if (strcmp(cmd, "#leftwipe") == 0) {
+                        left_wipe_pending = 1;
+                    } else if (strcmp(cmd, "#left") == 0) {
+                        left_wipe_pending = 0;
+                    } else if (strcmp(cmd, "#rightwipe") == 0) {
                         right_wipe_pending = 1;
                     } else if (strcmp(cmd, "#right") == 0) {
                         right_wipe_pending = 0;
@@ -2239,6 +2261,7 @@ static void run_script_sjis(void)
                            g_state.left_face != old_left_face ||
                            g_state.right_stand != old_right_stand ||
                            g_state.right_face != old_right_face ||
+                           left_wipe_pending ||
                            right_wipe_pending) {
                     stand_dirty = 1;
                 }
@@ -2272,8 +2295,13 @@ static void run_script_sjis(void)
         if (scene_dirty || strcmp(last_bg_name, g_state.bg_name) != 0) {
 
             ui_draw_background(g_state.bg_name);
-            ui_draw_stand(g_state.left_stand, g_state.left_face,
-                          STAND_LEFT_X, STAND_Y, 0);
+            if (left_wipe_pending) {
+                ui_draw_stand_center_wipe(g_state.left_stand, g_state.left_face,
+                                          STAND_LEFT_X, STAND_Y, 0);
+            } else {
+                ui_draw_stand(g_state.left_stand, g_state.left_face,
+                              STAND_LEFT_X, STAND_Y, 0);
+            }
             if (right_wipe_pending) {
                 ui_draw_stand_center_wipe(g_state.right_stand, g_state.right_face,
                                           STAND_RIGHT_X, STAND_Y, 1);
@@ -2291,6 +2319,7 @@ static void run_script_sjis(void)
 
             scene_dirty = 0;
             stand_dirty = 0;
+            left_wipe_pending = 0;
             right_wipe_pending = 0;
 
         } else if (stand_dirty) {
@@ -2306,9 +2335,15 @@ static void run_script_sjis(void)
 
                 // debug_log("LEFT STAND PARTIAL UPDATE");
 
-                ui_refresh_left_stand_only(g_state.bg_name,
-                                           g_state.left_stand,
-                                           g_state.left_face);
+                if (left_wipe_pending) {
+                    ui_refresh_left_stand_only_wipe(g_state.bg_name,
+                                                    g_state.left_stand,
+                                                    g_state.left_face);
+                } else {
+                    ui_refresh_left_stand_only(g_state.bg_name,
+                                               g_state.left_stand,
+                                               g_state.left_face);
+                }
 
                 last_left_stand = g_state.left_stand;
                 last_left_face = g_state.left_face;
@@ -2339,8 +2374,13 @@ static void run_script_sjis(void)
 
 
                 ui_draw_background(g_state.bg_name);
-                ui_draw_stand(g_state.left_stand, g_state.left_face,
-                              STAND_LEFT_X, STAND_Y, 0);
+                if (left_wipe_pending) {
+                    ui_draw_stand_center_wipe(g_state.left_stand, g_state.left_face,
+                                              STAND_LEFT_X, STAND_Y, 0);
+                } else {
+                    ui_draw_stand(g_state.left_stand, g_state.left_face,
+                                  STAND_LEFT_X, STAND_Y, 0);
+                }
                 if (right_wipe_pending) {
                     ui_draw_stand_center_wipe(g_state.right_stand, g_state.right_face,
                                               STAND_RIGHT_X, STAND_Y, 1);
@@ -2358,6 +2398,7 @@ static void run_script_sjis(void)
             }
 
         stand_dirty = 0;
+        left_wipe_pending = 0;
         right_wipe_pending = 0;
         }
         ui_draw_message_jis(name_jis, name_len, text_jis, text_len);
@@ -2533,7 +2574,7 @@ static void process_command_line(const char *line,
 
 
 
-    if (strcmp(cmd, "#left") == 0) {
+    if (strcmp(cmd, "#left") == 0 || strcmp(cmd, "#leftwipe") == 0) {
         if (count >= 2) {
             *left_stand = parse_stand_id(arg1);
         }

@@ -356,6 +356,69 @@ void graph98_pset(int x, int y, unsigned char color)
     }
 }
 
+static void graph98_draw_sprite_line_trans_fast(const uint8_t *src,
+                                                int src_start,
+                                                int width,
+                                                int dst_x,
+                                                int dst_y,
+                                                unsigned char transparent_color)
+{
+    int i;
+
+    i = 0;
+    while (i < width) {
+        uint16_t offset;
+        uint8_t bit;
+        uint8_t draw_mask;
+        uint8_t blue_bits;
+        uint8_t red_bits;
+        uint8_t green_bits;
+        uint8_t intens_bits;
+
+        offset = (uint16_t)(dst_y * GRAPH98_BYTES_PER_LINE + ((dst_x + i) >> 3));
+        bit = (uint8_t)(0x80u >> ((dst_x + i) & 7));
+
+        draw_mask = 0;
+        blue_bits = 0;
+        red_bits = 0;
+        green_bits = 0;
+        intens_bits = 0;
+
+        while (i < width && bit != 0) {
+            unsigned char color;
+
+            color = (unsigned char)(src[src_start + i] & 0x0Fu);
+
+            if (color != transparent_color) {
+                draw_mask |= bit;
+
+                if (color & 0x01u) blue_bits |= bit;
+                if (color & 0x02u) red_bits |= bit;
+                if (color & 0x04u) green_bits |= bit;
+                if (color & 0x08u) intens_bits |= bit;
+            }
+
+            bit >>= 1;
+            ++i;
+        }
+
+        if (draw_mask != 0) {
+            GRAPH98_VRAM_BLUE[offset] =
+                (uint8_t)((GRAPH98_VRAM_BLUE[offset] & (uint8_t)~draw_mask) | blue_bits);
+
+            GRAPH98_VRAM_RED[offset] =
+                (uint8_t)((GRAPH98_VRAM_RED[offset] & (uint8_t)~draw_mask) | red_bits);
+
+            GRAPH98_VRAM_GREEN[offset] =
+                (uint8_t)((GRAPH98_VRAM_GREEN[offset] & (uint8_t)~draw_mask) | green_bits);
+
+            GRAPH98_VRAM_INTENS[offset] =
+                (uint8_t)((GRAPH98_VRAM_INTENS[offset] & (uint8_t)~draw_mask) | intens_bits);
+        }
+    }
+}
+
+
 void graph98_hline(int x0, int x1, int y, unsigned char color)
 {
     int x;
@@ -912,21 +975,33 @@ int graph98_draw_sprite_file_trans(const char *path, int x, int y,
 
             row = buffer + (uint16_t)(header.width * line);
 
-            for (src_x = 0; src_x < header.width; ++src_x) {
-                unsigned char color;
-                int dst_x;
+            {
+                int src_start;
+                int draw_width;
+                int draw_x;
 
-                color = (unsigned char)(row[src_x] & 0x0Fu);
-                if (color == transparent_color) {
-                    continue;
+                src_start = 0;
+                draw_width = (int)header.width;
+                draw_x = x;
+
+                if (draw_x < 0) {
+                    src_start = -draw_x;
+                    draw_width -= src_start;
+                    draw_x = 0;
                 }
 
-                dst_x = x + (int)src_x;
-                if (dst_x < 0 || dst_x >= GRAPH98_WIDTH) {
-                    continue;
+                if (draw_x + draw_width > GRAPH98_WIDTH) {
+                    draw_width = GRAPH98_WIDTH - draw_x;
                 }
 
-                graph98_pset(dst_x, dst_y, color);
+                if (draw_width > 0) {
+                    graph98_draw_sprite_line_trans_fast(row,
+                                                src_start,
+                                                draw_width,
+                                                draw_x,
+                                                dst_y,
+                                                transparent_color);
+                }
             }
         }
 

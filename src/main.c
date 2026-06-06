@@ -157,6 +157,8 @@ static const char *ui_get_stand_sprite_path(enum StandId stand_id,
 static void ui_draw_stand_placeholder(int x, int y);
 static void ui_draw_stand(enum StandId stand_id, enum FaceId face_id,
                           int x, int y, int facing_left);
+static void ui_draw_stand_center_wipe(enum StandId stand_id, enum FaceId face_id,
+                                      int x, int y, int facing_left);
 static void ui_draw_stands_for_message(const struct Message *msg);
 static void draw_string_kanji(int x, int y, const unsigned char **fonts, int count);
 static void ui_draw_cursor_triangle(int x, int y, unsigned char color);
@@ -195,6 +197,9 @@ static void ui_refresh_left_stand_only(const char *bg_name,
 static void ui_refresh_right_stand_only(const char *bg_name,
                                         enum StandId right_stand,
                                         enum FaceId right_face);
+static void ui_refresh_right_stand_only_wipe(const char *bg_name,
+                                             enum StandId right_stand,
+                                             enum FaceId right_face);
 
 static GameFlag *find_flag(const char *name);
 static GameFlag *find_or_create_flag(const char *name);
@@ -683,6 +688,18 @@ static void ui_refresh_right_stand_only(const char *bg_name,
     ui_draw_stand(right_stand, right_face, STAND_RIGHT_X, STAND_Y, 1);
 }
 
+static void ui_refresh_right_stand_only_wipe(const char *bg_name,
+                                             enum StandId right_stand,
+                                             enum FaceId right_face)
+{
+    ui_restore_stand_background_rect(STAND_RIGHT_X,
+                                     STAND_Y,
+                                     STAND_RIGHT_X + STAND_W - 1,
+                                     STAND_Y + STAND_H - 1,
+                                     bg_name);
+    ui_draw_stand_center_wipe(right_stand, right_face, STAND_RIGHT_X, STAND_Y, 1);
+}
+
 static const char *ui_get_stand_sprite_path(enum StandId stand_id,
                                             enum FaceId face_id,
                                             int facing_left)
@@ -761,6 +778,27 @@ static void ui_draw_stand(enum StandId stand_id, enum FaceId face_id,
 
 
 
+}
+
+static void ui_draw_stand_center_wipe(enum StandId stand_id, enum FaceId face_id,
+                                      int x, int y, int facing_left)
+{
+    const char *sprite_path;
+
+    if (stand_id == STAND_NONE) {
+        return;
+    }
+
+    sprite_path = ui_get_stand_sprite_path(stand_id, face_id, facing_left);
+    if (sprite_path == 0) {
+        return;
+    }
+
+    if (!graph98_draw_sprite_file_trans_center_wipe(sprite_path, x, y, 0, 16)) {
+        debug_log("sprite wipe load failed: %s", sprite_path);
+        graph98_boxfill(x + 20, y + 20, x + 180, y + 80, 4);
+        graph98_draw_string(x + 30, y + 45, "SPRITE LOAD NG", 15);
+    }
 }
 
 static void ui_draw_stands_for_message(const struct Message *msg)
@@ -1951,9 +1989,11 @@ static void run_script_sjis(void)
     int scene_dirty;
 
     int stand_dirty;
+    int right_wipe_pending;
     
     
     stand_dirty = 0;
+    right_wipe_pending = 0;
     script_line = 0;
 
     current_name[0] = '\0';
@@ -1985,6 +2025,7 @@ static void run_script_sjis(void)
                                current_name, sizeof(current_name));
             scene_dirty = 1;
             stand_dirty = 0;
+            right_wipe_pending = 0;
             g_request_scene_redraw = 0;
             g_request_script_resume = 0;
         }
@@ -2176,6 +2217,14 @@ static void run_script_sjis(void)
                 old_right_stand = g_state.right_stand;
                 old_right_face = g_state.right_face;
 
+                if (count >= 2) {
+                    if (strcmp(cmd, "#rightwipe") == 0) {
+                        right_wipe_pending = 1;
+                    } else if (strcmp(cmd, "#right") == 0) {
+                        right_wipe_pending = 0;
+                    }
+                }
+
                 process_command_line(line,
                                      g_state.bg_name,
                                      &g_state.left_stand,
@@ -2189,7 +2238,8 @@ static void run_script_sjis(void)
                 } else if (g_state.left_stand != old_left_stand ||
                            g_state.left_face != old_left_face ||
                            g_state.right_stand != old_right_stand ||
-                           g_state.right_face != old_right_face) {
+                           g_state.right_face != old_right_face ||
+                           right_wipe_pending) {
                     stand_dirty = 1;
                 }
             }
@@ -2222,8 +2272,15 @@ static void run_script_sjis(void)
         if (scene_dirty || strcmp(last_bg_name, g_state.bg_name) != 0) {
 
             ui_draw_background(g_state.bg_name);
-            ui_draw_current_stands(g_state.left_stand, g_state.left_face,
-                                   g_state.right_stand, g_state.right_face);
+            ui_draw_stand(g_state.left_stand, g_state.left_face,
+                          STAND_LEFT_X, STAND_Y, 0);
+            if (right_wipe_pending) {
+                ui_draw_stand_center_wipe(g_state.right_stand, g_state.right_face,
+                                          STAND_RIGHT_X, STAND_Y, 1);
+            } else {
+                ui_draw_stand(g_state.right_stand, g_state.right_face,
+                              STAND_RIGHT_X, STAND_Y, 1);
+            }
 
             strncpy(last_bg_name, g_state.bg_name, sizeof(last_bg_name) - 1);
             last_bg_name[sizeof(last_bg_name) - 1] = '\0';
@@ -2234,6 +2291,7 @@ static void run_script_sjis(void)
 
             scene_dirty = 0;
             stand_dirty = 0;
+            right_wipe_pending = 0;
 
         } else if (stand_dirty) {
 
@@ -2262,9 +2320,15 @@ static void run_script_sjis(void)
 
                 // debug_log("RIGHT STAND PARTIAL UPDATE");
 
-                ui_refresh_right_stand_only(g_state.bg_name,
-                                            g_state.right_stand,
-                                            g_state.right_face);
+                if (right_wipe_pending) {
+                    ui_refresh_right_stand_only_wipe(g_state.bg_name,
+                                                     g_state.right_stand,
+                                                     g_state.right_face);
+                } else {
+                    ui_refresh_right_stand_only(g_state.bg_name,
+                                                g_state.right_stand,
+                                                g_state.right_face);
+                }
 
                 last_right_stand = g_state.right_stand;
                 last_right_face = g_state.right_face;
@@ -2275,8 +2339,15 @@ static void run_script_sjis(void)
 
 
                 ui_draw_background(g_state.bg_name);
-                ui_draw_current_stands(g_state.left_stand, g_state.left_face,
-                                       g_state.right_stand, g_state.right_face);
+                ui_draw_stand(g_state.left_stand, g_state.left_face,
+                              STAND_LEFT_X, STAND_Y, 0);
+                if (right_wipe_pending) {
+                    ui_draw_stand_center_wipe(g_state.right_stand, g_state.right_face,
+                                              STAND_RIGHT_X, STAND_Y, 1);
+                } else {
+                    ui_draw_stand(g_state.right_stand, g_state.right_face,
+                                  STAND_RIGHT_X, STAND_Y, 1);
+                }
 
                 strncpy(last_bg_name, g_state.bg_name, sizeof(last_bg_name) - 1);
                 last_bg_name[sizeof(last_bg_name) - 1] = '\0';
@@ -2287,6 +2358,7 @@ static void run_script_sjis(void)
             }
 
         stand_dirty = 0;
+        right_wipe_pending = 0;
         }
         ui_draw_message_jis(name_jis, name_len, text_jis, text_len);
 
@@ -2473,7 +2545,7 @@ static void process_command_line(const char *line,
         return;
     }
 
-    if (strcmp(cmd, "#right") == 0) {
+    if (strcmp(cmd, "#right") == 0 || strcmp(cmd, "#rightwipe") == 0) {
         if (count >= 2) {
             *right_stand = parse_stand_id(arg1);
         }

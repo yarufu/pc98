@@ -26,6 +26,9 @@
 #define STAND_W        256
 #define STAND_H        290
 
+/* 背景ワイプ速度。16 または 24 程度を推奨。 */
+#define BG_WIPE_STEP_LINES 8
+
 
 struct Message;
 
@@ -147,6 +150,7 @@ static int input_wait_choice_cursor(const struct Message *msg,
 static void io_out8(uint16_t port, uint8_t value);
 static void get_kanji_font(uint16_t jis_code, unsigned char *buffer);
 static void ui_draw_background(const char *bg_name);
+static void ui_draw_background_center_wipe(const char *bg_name);
 static void ui_draw_message_window(void);
 static void ui_set_message_box(int x0, int y0, int x1, int y1);
 static int ui_get_message_line_chars(void);
@@ -481,6 +485,27 @@ static void ui_draw_background(const char *bg_name)
             return;
         }
         debug_log("bg load failed: %s", path);
+    }
+
+    ui_draw_background_test();
+}
+
+static void ui_draw_background_center_wipe(const char *bg_name)
+{
+    char path[40];
+
+    if (bg_name == 0 || bg_name[0] == '\0') {
+        ui_draw_background_test();
+        return;
+    }
+
+    build_bg_path(bg_name, path, sizeof(path));
+
+    if (path[0] != '\0') {
+        if (graph98_load_g98_center_wipe(path, BG_WIPE_STEP_LINES)) {
+            return;
+        }
+        debug_log("bg wipe load failed: %s", path);
     }
 
     ui_draw_background_test();
@@ -2004,11 +2029,13 @@ static void run_script_sjis(void)
     int scene_dirty;
 
     int stand_dirty;
+    int bg_wipe_pending;
     int left_wipe_pending;
     int right_wipe_pending;
     
     
     stand_dirty = 0;
+    bg_wipe_pending = 0;
     left_wipe_pending = 0;
     right_wipe_pending = 0;
     script_line = 0;
@@ -2042,6 +2069,7 @@ static void run_script_sjis(void)
                                current_name, sizeof(current_name));
             scene_dirty = 1;
             stand_dirty = 0;
+            bg_wipe_pending = 0;
             left_wipe_pending = 0;
             right_wipe_pending = 0;
             g_request_scene_redraw = 0;
@@ -2236,7 +2264,11 @@ static void run_script_sjis(void)
                 old_right_face = g_state.right_face;
 
                 if (count >= 2) {
-                    if (strcmp(cmd, "#leftwipe") == 0) {
+                    if (strcmp(cmd, "#bgwipe") == 0) {
+                        bg_wipe_pending = 1;
+                    } else if (strcmp(cmd, "#bg") == 0) {
+                        bg_wipe_pending = 0;
+                    } else if (strcmp(cmd, "#leftwipe") == 0) {
                         left_wipe_pending = 1;
                     } else if (strcmp(cmd, "#left") == 0) {
                         left_wipe_pending = 0;
@@ -2254,7 +2286,7 @@ static void run_script_sjis(void)
                                      &g_state.right_stand,
                                      &g_state.right_face);
 
-                if (strcmp(g_state.bg_name, old_bg_name) != 0) {
+                if (bg_wipe_pending || strcmp(g_state.bg_name, old_bg_name) != 0) {
                     scene_dirty = 1;
                     stand_dirty = 0;
                 } else if (g_state.left_stand != old_left_stand ||
@@ -2294,7 +2326,11 @@ static void run_script_sjis(void)
         // 変化があれば部分的に再描画
         if (scene_dirty || strcmp(last_bg_name, g_state.bg_name) != 0) {
 
-            ui_draw_background(g_state.bg_name);
+            if (bg_wipe_pending) {
+                ui_draw_background_center_wipe(g_state.bg_name);
+            } else {
+                ui_draw_background(g_state.bg_name);
+            }
             if (left_wipe_pending) {
                 ui_draw_stand_center_wipe(g_state.left_stand, g_state.left_face,
                                           STAND_LEFT_X, STAND_Y, 0);
@@ -2319,6 +2355,7 @@ static void run_script_sjis(void)
 
             scene_dirty = 0;
             stand_dirty = 0;
+            bg_wipe_pending = 0;
             left_wipe_pending = 0;
             right_wipe_pending = 0;
 
@@ -2547,7 +2584,7 @@ static void process_command_line(const char *line,
         return;
     }
 
-    if (strcmp(cmd, "#bg") == 0) {
+    if (strcmp(cmd, "#bg") == 0 || strcmp(cmd, "#bgwipe") == 0) {
         if (count >= 2) {
             strncpy(bg_name, arg1, 31);
             bg_name[31] = '\0';

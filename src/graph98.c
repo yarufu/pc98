@@ -904,6 +904,104 @@ int graph98_load_g98_rect(const char *path, int x0, int y0, int x1, int y1)
     return ok;
 }
 
+int graph98_load_g98_center_wipe(const char *path, int step_lines)
+{
+    struct graph98_g98_header header;
+    FILE *fp;
+    unsigned long header_size;
+    unsigned long plane_size;
+    uint16_t revealed;
+    uint16_t step;
+    int top_y0;
+    int top_y1;
+    int bottom_y0;
+    int bottom_y1;
+    int plane_index;
+    volatile uint8_t __far *planes[4];
+
+    fp = fopen(path, "rb");
+    if (fp == 0) {
+        return 0;
+    }
+
+    if (!graph98_read_g98_header(fp, &header)) {
+        fclose(fp);
+        return 0;
+    }
+
+    if (header.magic[0] != GRAPH98_G98_MAGIC_0 ||
+        header.magic[1] != GRAPH98_G98_MAGIC_1 ||
+        header.magic[2] != GRAPH98_G98_MAGIC_2 ||
+        header.magic[3] != GRAPH98_G98_MAGIC_3 ||
+        header.width != GRAPH98_WIDTH ||
+        header.height != GRAPH98_HEIGHT ||
+        header.version != GRAPH98_G98_VERSION ||
+        header.plane_order[0] != 'B' ||
+        header.plane_order[1] != 'R' ||
+        header.plane_order[2] != 'G' ||
+        header.plane_order[3] != 'I') {
+        fclose(fp);
+        return 0;
+    }
+
+    if (step_lines <= 0) {
+        step_lines = 24;
+    }
+    step = (uint16_t)step_lines;
+
+    planes[0] = GRAPH98_VRAM_BLUE;
+    planes[1] = GRAPH98_VRAM_RED;
+    planes[2] = GRAPH98_VRAM_GREEN;
+    planes[3] = GRAPH98_VRAM_INTENS;
+
+    header_size = 13UL;
+    plane_size = (unsigned long)GRAPH98_BYTES_PER_LINE * GRAPH98_HEIGHT;
+    revealed = 0;
+
+    while ((unsigned long)revealed * 2UL < GRAPH98_HEIGHT) {
+        top_y0 = (int)revealed;
+        top_y1 = top_y0 + (int)step - 1;
+        if (top_y1 >= GRAPH98_HEIGHT - (int)revealed) {
+            top_y1 = GRAPH98_HEIGHT - (int)revealed - 1;
+        }
+
+        bottom_y1 = GRAPH98_HEIGHT - (int)revealed - 1;
+        bottom_y0 = bottom_y1 - (int)step + 1;
+        if (bottom_y0 <= top_y1) {
+            bottom_y0 = top_y1 + 1;
+        }
+
+        for (plane_index = 0; plane_index < 4; ++plane_index) {
+            unsigned long plane_start;
+
+            plane_start = header_size + plane_size * (unsigned long)plane_index;
+
+            if (!graph98_copy_plane_rect_from_file(fp, planes[plane_index],
+                                                   plane_start,
+                                                   0, top_y0,
+                                                   GRAPH98_WIDTH - 1, top_y1)) {
+                fclose(fp);
+                return 0;
+            }
+
+            if (bottom_y0 <= bottom_y1 &&
+                !graph98_copy_plane_rect_from_file(fp, planes[plane_index],
+                                                   plane_start,
+                                                   0, bottom_y0,
+                                                   GRAPH98_WIDTH - 1, bottom_y1)) {
+                fclose(fp);
+                return 0;
+            }
+        }
+
+        graph98_wait_vsync();
+        revealed = (uint16_t)(revealed + step);
+    }
+
+    fclose(fp);
+    return 1;
+}
+
 
 int graph98_draw_sprite_file_trans(const char *path, int x, int y,
                                    unsigned char transparent_color)

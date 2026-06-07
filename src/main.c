@@ -1901,11 +1901,33 @@ static void handle_save_hotkey(uint8_t ch)
     save_game_state();
 }
 
+static void resume_bgm_after_load(void)
+{
+    if (!g_pmd_available) {
+        return;
+    }
+
+    if (g_state.bgm[0] == '\0') {
+        return;
+    }
+
+    pmd_stop_music();
+
+    if (pmd_load_music_file(g_state.bgm)) {
+        pmd_start_music();
+        debug_log("BGM resumed after load: %s", g_state.bgm);
+    } else {
+        debug_log("BGM resume failed after load: %s", g_state.bgm);
+    }
+}
+
 static void handle_load_hotkey(uint8_t ch)
 {
     (void)ch;
 
     if (load_game_state()) {
+        resume_bgm_after_load();
+
         g_request_scene_redraw = 1;
         g_request_script_resume = 1;
     }

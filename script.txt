@@ -1,7 +1,8 @@
 #pal adv.pal
-#bg class
+;#bg class
+#bgwipe class
 #bgm kirakira.m
-
+#rightwipe character02 normal
 
 [‹à“cˆê]
 ”Æl‚Í‚±‚Ì’†‚É‚¢‚éI

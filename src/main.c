@@ -211,6 +211,7 @@ static void ui_refresh_right_stand_only_wipe(const char *bg_name,
 static GameFlag *find_flag(const char *name);
 static GameFlag *find_or_create_flag(const char *name);
 static void add_flag_value(const char *name, int value);
+static void set_flag_value(const char *name, int value);
 static int get_flag_value(const char *name);
 static void debug_log(const char *fmt, ...);
 static int read_script_line(FILE *fp, char *line, int line_size, int *script_line);
@@ -1733,6 +1734,17 @@ static void add_flag_value(const char *name, int value)
     }
 }
 
+static void set_flag_value(const char *name, int value)
+{
+    GameFlag *flag;
+
+    flag = find_or_create_flag(name);
+
+    if (flag != 0) {
+        flag->value = value;
+    }
+}
+
 static int get_flag_value(const char *name)
 {
     GameFlag *flag;
@@ -2182,6 +2194,13 @@ static void run_script_sjis(void)
                 continue;
             }
 
+            if (strcmp(cmd, "#setnum") == 0) {
+                if (count >= 3) {
+                    set_flag_value(arg1, atoi(arg2));
+                }
+                continue;
+            }
+
             if (strcmp(cmd, "#ifge") == 0) {
                 if (count >= 4) {
                     if (get_flag_value(arg1) >= atoi(arg2)) {
@@ -2189,7 +2208,16 @@ static void run_script_sjis(void)
                     }
                 }
                 continue;
-            }      
+            }
+
+            if (strcmp(cmd, "#ifeq") == 0) {
+                if (count >= 4) {
+                    if (get_flag_value(arg1) == atoi(arg2)) {
+                        find_label_and_jump(fp, &script_line, arg3);
+                    }
+                }
+                continue;
+            }
      
             if (strcmp(cmd, "#pal") == 0) {
                 if (count >= 2) {

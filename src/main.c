@@ -69,6 +69,10 @@ typedef struct {
 } GameFlag;
 
 #define MAX_FLAGS 16
+#define MAX_CHOICE_ITEMS 6
+#define MAX_CHOICE_CHARS 64
+#define MAX_CHOICE_DRAW_CHARS 8
+#define CHOICE_COLUMNS 2
 #define SAVE_VERSION 1
 
 typedef struct {
@@ -125,16 +129,15 @@ static int g_msg_line2_y = 332;
 static int g_msg_line3_y = 356;
 */
 
-static int g_choice_line1_y = 317;
-static int g_choice_line2_y = 339;
-static int g_choice_text_x = 160;
-static int g_choice_cursor_x = 128;
-static int g_choice_band_x0 = 140;
-static int g_choice_band_x1 = 500;
-static int g_choice_band1_y0 = 313;
-static int g_choice_band1_y1 = 332;
-static int g_choice_band2_y0 = 337;
-static int g_choice_band2_y1 = 354;
+static int g_choice_text_x[MAX_CHOICE_ITEMS] = {160, 340, 160, 340, 160, 340};
+static int g_choice_text_y[MAX_CHOICE_ITEMS] = {317, 317, 339, 339, 361, 361};
+static int g_choice_band_x0[MAX_CHOICE_ITEMS] = {140, 320, 140, 320, 140, 320};
+static int g_choice_band_x1[MAX_CHOICE_ITEMS] = {319, 500, 319, 500, 319, 500};
+static int g_choice_band_y0[MAX_CHOICE_ITEMS] = {313, 313, 335, 335, 357, 357};
+static int g_choice_band_y1[MAX_CHOICE_ITEMS] = {332, 332, 354, 354, 376, 376};
+static uint16_t g_choice_work_jis[MAX_CHOICE_ITEMS][MAX_CHOICE_CHARS];
+static int g_choice_work_lens[MAX_CHOICE_ITEMS];
+static char g_choice_work_line[256];
 
 
 
@@ -183,10 +186,11 @@ static void ui_draw_current_stands(enum StandId left_stand,
                                    enum FaceId left_face,
                                    enum StandId right_stand,
                                    enum FaceId right_face);
-static int input_wait_choice_jis(const uint16_t *choice1, int choice1_len,
-                                 const uint16_t *choice2, int choice2_len);
-static void handle_choice_block(FILE *fp, int *script_line,
-                                const char *label1, const char *label2);
+static int input_wait_choice_jis(int choice_count)
+    __attribute__((noinline,optimize("O0")));
+static void handle_choice_block(FILE *fp, int *script_line)
+    __attribute__((noinline,optimize("O0")));
+static void store_choice_line(int index, const char *line) __attribute__((noinline));
 static int find_label_and_jump(FILE *fp, int *script_line,
                                const char *label_name);
 static void trim_leading_spaces(char *str);
@@ -237,9 +241,7 @@ static void ui_draw_wait_mark(int x, int y, unsigned char color)
     graph98_hline(x + 4, x + 4, y + 4, color);
 }
 
-static void ui_draw_choice_jis(const uint16_t *choice1, int choice1_len,
-                               const uint16_t *choice2, int choice2_len,
-                               int selected);
+static void ui_draw_choice_jis(int choice_count, int selected);
 
 
 struct Message {
@@ -362,6 +364,15 @@ static void ui_draw_cursor_triangle(int x, int y, unsigned char color)
 
 static void ui_set_message_box(int x0, int y0, int x1, int y1)
 {
+    int i;
+    int row;
+    int col;
+    int band_x0;
+    int band_x1;
+    int cell_w;
+    int row_step;
+    int band_h;
+
     if (x0 < 0 || y0 < 0 || x1 >= 640 || y1 >= 400) {
         return;
     }
@@ -379,18 +390,28 @@ static void ui_set_message_box(int x0, int y0, int x1, int y1)
     g_msg_line2_y = g_msgbox_y0 + 32;
     g_msg_line3_y = g_msgbox_y0 + 56;
 
-    g_choice_line1_y = g_msgbox_y0 + 12;
-    g_choice_line2_y = g_msgbox_y0 + 34;
-    g_choice_text_x = g_msgbox_x0 + 51;
-    g_choice_cursor_x = g_msgbox_x0 + 19;
+    band_x0 = g_msgbox_x0 + 31;
+    band_x1 = g_msgbox_x1 - 31;
+    cell_w = (band_x1 - band_x0 + 1) / CHOICE_COLUMNS;
+    row_step = 22;
+    band_h = 19;
 
-    g_choice_band_x0 = g_msgbox_x0 + 31;
-    g_choice_band_x1 = g_msgbox_x1 - 31;
+    for (i = 0; i < MAX_CHOICE_ITEMS; ++i) {
+        row = i / CHOICE_COLUMNS;
+        col = i % CHOICE_COLUMNS;
 
-    g_choice_band1_y0 = g_choice_line1_y;
-    g_choice_band1_y1 = g_choice_line1_y + 15;
-    g_choice_band2_y0 = g_choice_line2_y;
-    g_choice_band2_y1 = g_choice_line2_y + 15;
+        g_choice_band_x0[i] = band_x0 + col * cell_w;
+        if (col == CHOICE_COLUMNS - 1) {
+            g_choice_band_x1[i] = band_x1;
+        } else {
+            g_choice_band_x1[i] = g_choice_band_x0[i] + cell_w - 1;
+        }
+
+        g_choice_band_y0[i] = g_msgbox_y0 + row * row_step;
+        g_choice_band_y1[i] = g_choice_band_y0[i] + band_h;
+        g_choice_text_x[i] = g_choice_band_x0[i] + 20;
+        g_choice_text_y[i] = g_choice_band_y0[i] + 4;
+    }
 }
 
 static int ui_get_message_line_chars(void)
@@ -1027,176 +1048,42 @@ static void ui_draw_message_jis(const uint16_t *name, int name_len,
     // debug_log("ui_draw_message_jis end");
 }
 
-/*
- * 選択肢を表示する専用ウィンドウです。
- *
- * 今回は最小版なので、
- * - 1 行目に「1. はい」
- * - 2 行目に「2. いいえ」
- * のように 2 行固定で描きます。
- *
- * 番号部分は ASCII のまま既存関数で描き、
- * 日本語部分だけを JIS 配列から漢字 ROM 経由で描きます。
- */
-static void ui_draw_choice_jis(const uint16_t *choice1, int choice1_len,
-                               const uint16_t *choice2, int choice2_len,
-                               int selected)
+static void ui_draw_choice_jis(int choice_count, int selected)
 {
+    static unsigned char choice_fonts[MAX_CHOICE_ITEMS][MAX_CHOICE_DRAW_CHARS][32];
+    static const unsigned char *line_fonts[MAX_CHOICE_DRAW_CHARS];
+    int i;
+    int j;
+    int draw_count;
 
-    static unsigned char choice1_font0[32];
-    static unsigned char choice1_font1[32];
-    static unsigned char choice1_font2[32];
-    static unsigned char choice1_font3[32];
-    static unsigned char choice1_font4[32];
-    static unsigned char choice1_font5[32];
-    static unsigned char choice1_font6[32];
-    static unsigned char choice1_font7[32];
-
-    static unsigned char choice2_font0[32];
-    static unsigned char choice2_font1[32];
-    static unsigned char choice2_font2[32];
-    static unsigned char choice2_font3[32];
-    static unsigned char choice2_font4[32];
-    static unsigned char choice2_font5[32];
-    static unsigned char choice2_font6[32];
-    static unsigned char choice2_font7[32];
-
-    static const unsigned char *line1[8];
-    static const unsigned char *line2[8];
-    int draw_count1;
-    int draw_count2;
-
-    int choice_line1_y;
-    int choice_line2_y;
-    int choice_text_x;
-    int choice_cursor_x;
-
-    choice_line1_y = g_choice_line1_y;
-    choice_line2_y = g_choice_line2_y;
-    choice_text_x = g_choice_text_x;
-    choice_cursor_x = g_choice_cursor_x;
-
-    /*
-     * 選択肢中は右上の別ウィンドウを使わず、
-     * 下部メッセージウィンドウをそのまま使います。
-     */
     ui_draw_message_window();
 
-
-    /* 選択中の行に帯を描く */
-    if (selected == 1) {
-        graph98_boxfill(g_choice_band_x0,
-                        g_choice_band1_y0,
-                        g_choice_band_x1,
-                        g_choice_band1_y1,
-                        15);
-    }
-    if (selected == 2) {
-        graph98_boxfill(g_choice_band_x0,
-                        g_choice_band2_y0,
-                        g_choice_band_x1,
-                        g_choice_band2_y1,
+    if (selected >= 1 && selected <= choice_count) {
+        i = selected - 1;
+        graph98_boxfill(g_choice_band_x0[i],
+                        g_choice_band_y0[i],
+                        g_choice_band_x1[i],
+                        g_choice_band_y1[i],
                         15);
     }
 
-    /*
-     * 選択中の行にだけ三角カーソルを表示します。
-     * 今回は 2 択だけなので、
-     * selected が 1 か 2 かだけ見れば十分です。
-     * 
-     * 現在カーソルは表示しない
-     */
-     /*
-    if (selected == 1) {
-        ui_draw_cursor_triangle(choice_cursor_x, choice_line1_y + 4, 15);
-    }
-    if (selected == 2) {
-        ui_draw_cursor_triangle(choice_cursor_x, choice_line2_y + 4, 15);
-    }
-    */
-
-    draw_count1 = choice1_len;
-    if (draw_count1 > 8) {
-        draw_count1 = 8;
-    }
-
-    draw_count2 = choice2_len;
-    if (draw_count2 > 8) {
-        draw_count2 = 8;
-    }
-
-    if (choice1 != 0 && draw_count1 > 0) {
-        if (draw_count1 >= 1) {
-            get_kanji_font(choice1[0], choice1_font0);
-            line1[0] = choice1_font0;
-        }
-        if (draw_count1 >= 2) {
-            get_kanji_font(choice1[1], choice1_font1);
-            line1[1] = choice1_font1;
-        }
-        if (draw_count1 >= 3) {
-            get_kanji_font(choice1[2], choice1_font2);
-            line1[2] = choice1_font2;
-        }
-        if (draw_count1 >= 4) {
-            get_kanji_font(choice1[3], choice1_font3);
-            line1[3] = choice1_font3;
-        }
-        if (draw_count1 >= 5) {
-            get_kanji_font(choice1[4], choice1_font4);
-            line1[4] = choice1_font4;
-        }
-        if (draw_count1 >= 6) {
-            get_kanji_font(choice1[5], choice1_font5);
-            line1[5] = choice1_font5;
-        }
-        if (draw_count1 >= 7) {
-            get_kanji_font(choice1[6], choice1_font6);
-            line1[6] = choice1_font6;
-        }
-        if (draw_count1 >= 8) {
-            get_kanji_font(choice1[7], choice1_font7);
-            line1[7] = choice1_font7;
+    for (i = 0; i < choice_count && i < MAX_CHOICE_ITEMS; ++i) {
+        draw_count = g_choice_work_lens[i];
+        if (draw_count > MAX_CHOICE_DRAW_CHARS) {
+            draw_count = MAX_CHOICE_DRAW_CHARS;
         }
 
-        draw_string_kanji(choice_text_x, choice_line1_y, line1, draw_count1);
-    }
-
-    if (choice2 != 0 && draw_count2 > 0) {
-        if (draw_count2 >= 1) {
-            get_kanji_font(choice2[0], choice2_font0);
-            line2[0] = choice2_font0;
-        }
-        if (draw_count2 >= 2) {
-            get_kanji_font(choice2[1], choice2_font1);
-            line2[1] = choice2_font1;
-        }
-        if (draw_count2 >= 3) {
-            get_kanji_font(choice2[2], choice2_font2);
-            line2[2] = choice2_font2;
-        }
-        if (draw_count2 >= 4) {
-            get_kanji_font(choice2[3], choice2_font3);
-            line2[3] = choice2_font3;
-        }
-        if (draw_count2 >= 5) {
-            get_kanji_font(choice2[4], choice2_font4);
-            line2[4] = choice2_font4;
-        }
-        if (draw_count2 >= 6) {
-            get_kanji_font(choice2[5], choice2_font5);
-            line2[5] = choice2_font5;
-        }
-        if (draw_count2 >= 7) {
-            get_kanji_font(choice2[6], choice2_font6);
-            line2[6] = choice2_font6;
-        }
-        if (draw_count2 >= 8) {
-            get_kanji_font(choice2[7], choice2_font7);
-            line2[7] = choice2_font7;
+        for (j = 0; j < draw_count; ++j) {
+            get_kanji_font(g_choice_work_jis[i][j], choice_fonts[i][j]);
+            line_fonts[j] = choice_fonts[i][j];
         }
 
-        draw_string_kanji(choice_text_x, choice_line2_y, line2, draw_count2);
+        if (draw_count > 0) {
+            draw_string_kanji(g_choice_text_x[i],
+                              g_choice_text_y[i],
+                              line_fonts,
+                              draw_count);
+        }
     }
 }
 
@@ -1416,7 +1303,32 @@ static int input_wait_choice_cursor(const struct Message *msg,
                                     const char *current_bg_name)
 {
     uint8_t ch;
+    int i;
+    int copy_len;
     int selected;
+    int next;
+
+    for (i = 0; i < MAX_CHOICE_ITEMS; ++i) {
+        g_choice_work_lens[i] = 0;
+    }
+
+    copy_len = msg->choice1_len;
+    if (copy_len > MAX_CHOICE_CHARS) {
+        copy_len = MAX_CHOICE_CHARS;
+    }
+    for (i = 0; i < copy_len; ++i) {
+        g_choice_work_jis[0][i] = msg->choice1[i];
+    }
+    g_choice_work_lens[0] = copy_len;
+
+    copy_len = msg->choice2_len;
+    if (copy_len > MAX_CHOICE_CHARS) {
+        copy_len = MAX_CHOICE_CHARS;
+    }
+    for (i = 0; i < copy_len; ++i) {
+        g_choice_work_jis[1][i] = msg->choice2[i];
+    }
+    g_choice_work_lens[1] = copy_len;
 
     selected = 1;
 
@@ -1424,9 +1336,7 @@ static int input_wait_choice_cursor(const struct Message *msg,
     ui_draw_stands_for_message(msg);
 
     for (;;) {
-        ui_draw_choice_jis(msg->choice1, msg->choice1_len,
-                           msg->choice2, msg->choice2_len,
-                           selected);
+        ui_draw_choice_jis(2, selected);
 
         __asm__ __volatile__(
             "movb $0x08, %%ah\n\t"
@@ -1441,22 +1351,30 @@ static int input_wait_choice_cursor(const struct Message *msg,
             return selected;
         }
 
-        /* PC-98 実測値 */
-        if (ch == 0x0B) {
-            selected = 1;   /* ↑ */
+        next = selected;
+
+        if (ch == 0x0B || ch == 'W' || ch == 'w' || ch == '8') {
+            next = selected - CHOICE_COLUMNS;
         }
 
-        if (ch == 0x0A) {
-            selected = 2;   /* ↓ */
+        if (ch == 0x0A || ch == 'S' || ch == 's' || ch == '2') {
+            next = selected + CHOICE_COLUMNS;
         }
 
-        /* 保険として代替キーも残す */
-        if (ch == 'W' || ch == 'w' || ch == '8') {
-            selected = 1;
+        if (ch == 0x08 || ch == 'A' || ch == 'a' || ch == '4') {
+            if ((selected - 1) % CHOICE_COLUMNS != 0) {
+                next = selected - 1;
+            }
         }
 
-        if (ch == 'S' || ch == 's' || ch == '2') {
-            selected = 2;
+        if (ch == 0x0C || ch == 'D' || ch == 'd' || ch == '6') {
+            if ((selected - 1) % CHOICE_COLUMNS != CHOICE_COLUMNS - 1) {
+                next = selected + 1;
+            }
+        }
+
+        if (next >= 1 && next <= 2) {
+            selected = next;
         }
     }
 }
@@ -2138,9 +2056,11 @@ static void run_script_sjis(void)
                            cmd, arg1, arg2, arg3);
 
             if (strcmp(cmd, "#choice") == 0) {
-                if (count >= 3) {
-                    handle_choice_block(fp, &script_line, arg1, arg2);
-                }
+                handle_choice_block(fp, &script_line);
+                continue;
+            }
+
+            if (strcmp(cmd, "#endchoice") == 0) {
                 continue;
             }
 
@@ -2697,19 +2617,16 @@ static void ui_draw_current_stands(enum StandId left_stand,
 }
 
 
-// 新しい入力待ち関数を追加
-static int input_wait_choice_jis(const uint16_t *choice1, int choice1_len,
-                                 const uint16_t *choice2, int choice2_len)
+static int input_wait_choice_jis(int choice_count)
 {
     uint8_t ch;
     int selected;
+    int next;
 
     selected = 1;
 
     for (;;) {
-        ui_draw_choice_jis(choice1, choice1_len,
-                           choice2, choice2_len,
-                           selected);
+        ui_draw_choice_jis(choice_count, selected);
 
         __asm__ __volatile__(
             "movb $0x08, %%ah\n\t"
@@ -2723,68 +2640,83 @@ static int input_wait_choice_jis(const uint16_t *choice1, int choice1_len,
             return selected;
         }
 
-        if (ch == 0x0B) {
-            selected = 1;   /* ↑ */
+        next = selected;
+
+        if (ch == 0x0B || ch == 'W' || ch == 'w' || ch == '8') {
+            next = selected - CHOICE_COLUMNS;
         }
 
-        if (ch == 0x0A) {
-            selected = 2;   /* ↓ */
+        if (ch == 0x0A || ch == 'S' || ch == 's' || ch == '2') {
+            next = selected + CHOICE_COLUMNS;
         }
 
-        if (ch == 'W' || ch == 'w' || ch == '8') {
-            selected = 1;
+        if (ch == 0x08 || ch == 'A' || ch == 'a' || ch == '4') {
+            if ((selected - 1) % CHOICE_COLUMNS != 0) {
+                next = selected - 1;
+            }
         }
 
-        if (ch == 'S' || ch == 's' || ch == '2') {
-            selected = 2;
+        if (ch == 0x0C || ch == 'D' || ch == 'd' || ch == '6') {
+            if ((selected - 1) % CHOICE_COLUMNS != CHOICE_COLUMNS - 1) {
+                next = selected + 1;
+            }
+        }
+
+        if (next >= 1 && next <= choice_count) {
+            selected = next;
         }
     }
 }
 
-// #choice 用の処理関数を追加
-static void handle_choice_block(FILE *fp, int *script_line,
-                                const char *label1, const char *label2)
+static void store_choice_line(int index, const char *line)
 {
-    char line1[256];
-    char line2[256];
+    if (index < 0 || index >= MAX_CHOICE_ITEMS) {
+        return;
+    }
 
-    uint16_t choice1_jis[64];
-    uint16_t choice2_jis[64];
+    g_choice_work_lens[index] = convert_sjis_string_to_jis_array(
+        (const unsigned char *)line,
+        g_choice_work_jis[index],
+        MAX_CHOICE_CHARS
+    );
+}
 
-    int choice1_len;
-    int choice2_len;
+static void handle_choice_block(FILE *fp, int *script_line)
+{
+    int i;
+    int choice_count;
     int selected;
 
-    if (!read_script_line(fp, line1, sizeof(line1), script_line)) {
+    for (i = 0; i < MAX_CHOICE_ITEMS; ++i) {
+        g_choice_work_lens[i] = 0;
+    }
+    choice_count = 0;
+
+    while (read_script_line(fp, g_choice_work_line, 256, script_line)) {
+        remove_newline(g_choice_work_line);
+        trim_leading_spaces(g_choice_work_line);
+
+        if (g_choice_work_line[0] == '\0' ||
+            g_choice_work_line[0] == ';') {
+            continue;
+        }
+
+        if (strcmp(g_choice_work_line, "#endchoice") == 0) {
+            break;
+        }
+
+        if (choice_count < MAX_CHOICE_ITEMS) {
+            store_choice_line(choice_count, g_choice_work_line);
+            choice_count++;
+        }
+    }
+
+    if (choice_count < 2) {
         return;
     }
-    if (!read_script_line(fp, line2, sizeof(line2), script_line)) {
-        return;
-    }
 
-    remove_newline(line1);
-    remove_newline(line2);
-
-    choice1_len = convert_sjis_string_to_jis_array(
-        (const unsigned char *)line1,
-        choice1_jis,
-        64
-    );
-
-    choice2_len = convert_sjis_string_to_jis_array(
-        (const unsigned char *)line2,
-        choice2_jis,
-        64
-    );
-
-    selected = input_wait_choice_jis(choice1_jis, choice1_len,
-                                     choice2_jis, choice2_len);
-
-    if (selected == 1) {
-        find_label_and_jump(fp, script_line, label1);
-    } else {
-        find_label_and_jump(fp, script_line, label2);
-    }
+    selected = input_wait_choice_jis(choice_count);
+    set_flag_value("choice", selected);
 }
 
 int main(void)

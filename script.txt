@@ -2,18 +2,70 @@
 #bgwipe class
 #bgm MYSTERY.M
 
-#setnum route 2
+[サンプル子]
+選択肢です。
 
-#ifeq route 1 route_a
-#ifeq route 2 route_b
+#choice
+
+教室
+図書館
+体育館
+中庭
+購買
+;帰宅
+
+#endchoice
+
+#ifeq choice 1 choice_1
+#ifeq choice 2 choice_2
+#ifeq choice 3 choice_3
+#ifeq choice 4 choice_4
+#ifeq choice 5 choice_5
+;#ifeq choice 6 choice_6
 
 [サンプル子]
-ここが出たら失敗です。
+どれにも一致しませんでした。
 
-#label route_a
-[サンプル子]
-ルートＡです。
+#jump end_choice_test
 
-#label route_b
+#label choice_1
 [サンプル子]
-ルートＢです。
+１番を選びました。
+
+#jump end_choice_test
+
+#label choice_2
+[サンプル子]
+２番を選びました。
+
+#jump end_choice_test
+
+#label choice_3
+[サンプル子]
+３番を選びました。
+
+#jump end_choice_test
+
+#label choice_4
+[サンプル子]
+４番を選びました。
+
+#jump end_choice_test
+
+#label choice_5
+[サンプル子]
+５番を選びました。
+
+#jump end_choice_test
+
+#label choice_6
+
+[サンプル子]
+６番を選びました。
+
+#jump end_choice_test
+
+
+#label end_choice_test
+[サンプル子]
+選択テスト終了です。

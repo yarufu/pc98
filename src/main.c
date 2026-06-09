@@ -74,6 +74,8 @@ typedef struct {
 #define MAX_CHOICE_DRAW_CHARS 8
 #define CHOICE_COLUMNS 2
 #define SAVE_VERSION 1
+#define SAVE_SLOT_COUNT 3
+#define SAVE_MENU_ITEM_COUNT (SAVE_SLOT_COUNT + 1)
 
 typedef struct {
     char bg_name[32];
@@ -139,6 +141,28 @@ static uint16_t g_choice_work_jis[MAX_CHOICE_ITEMS][MAX_CHOICE_CHARS];
 static int g_choice_work_lens[MAX_CHOICE_ITEMS];
 static char g_choice_work_line[256];
 
+static const char *g_save_slot_files[SAVE_SLOT_COUNT] = {
+    "SAVE1.DAT",
+    "SAVE2.DAT",
+    "SAVE3.DAT"
+};
+
+/* Shift_JIS: セーブ１～３、ロード１～３、戻る */
+static const char g_save_menu_1[] = "\x83\x5A\x81\x5B\x83\x75\x82\x50";
+static const char g_save_menu_2[] = "\x83\x5A\x81\x5B\x83\x75\x82\x51";
+static const char g_save_menu_3[] = "\x83\x5A\x81\x5B\x83\x75\x82\x52";
+static const char g_load_menu_1[] = "\x83\x8D\x81\x5B\x83\x68\x82\x50";
+static const char g_load_menu_2[] = "\x83\x8D\x81\x5B\x83\x68\x82\x51";
+static const char g_load_menu_3[] = "\x83\x8D\x81\x5B\x83\x68\x82\x52";
+static const char g_menu_back[] = "\x96\xDF\x82\xE9";
+
+static const char *g_save_menu_items[SAVE_MENU_ITEM_COUNT] = {
+    g_save_menu_1, g_save_menu_2, g_save_menu_3, g_menu_back
+};
+static const char *g_load_menu_items[SAVE_MENU_ITEM_COUNT] = {
+    g_load_menu_1, g_load_menu_2, g_load_menu_3, g_menu_back
+};
+
 
 
 /* 関数宣言部 */
@@ -186,6 +210,7 @@ static void ui_draw_current_stands(enum StandId left_stand,
                                    enum FaceId left_face,
                                    enum StandId right_stand,
                                    enum FaceId right_face);
+static int show_selection_menu(const char *const *items, int item_count);
 static int input_wait_choice_jis(int choice_count)
     __attribute__((noinline,optimize("O0")));
 static void handle_choice_block(FILE *fp, int *script_line)
@@ -219,13 +244,15 @@ static void set_flag_value(const char *name, int value);
 static int get_flag_value(const char *name);
 static void debug_log(const char *fmt, ...);
 static int read_script_line(FILE *fp, char *line, int line_size, int *script_line);
-static int save_game_state(void);
-static int load_game_state(void);
+static int save_game_state(const char *filename);
+static int load_game_state(const char *filename);
+static void show_save_menu(void);
+static int show_load_menu(void);
 static void extract_name_from_brackets(const char *line, char *out_name, int out_size);
 static void resume_script_line(FILE *fp, int *script_line,
                                char *current_name, int current_name_size);
 static void handle_save_hotkey(uint8_t ch);
-static void handle_load_hotkey(uint8_t ch);
+static int handle_load_hotkey(uint8_t ch);
 
 // マウス関連
 static int input_key_available(void);
@@ -1227,13 +1254,18 @@ static int input_wait_key(void)
         if ((ch == 'S' || ch == 's') && g_save_key_armed) {
             handle_save_hotkey(ch);
             g_save_key_armed = 0;
-            continue;
+            return 0;
         }
 
         if ((ch == 'L' || ch == 'l') && g_load_key_armed) {
-            handle_load_hotkey(ch);
+            int load_succeeded;
+
+            load_succeeded = handle_load_hotkey(ch);
             g_load_key_armed = 0;
-            continue;
+            if (load_succeeded) {
+                return 1;
+            }
+            return 0;
         }
 
         if (ch != 'S' && ch != 's') {
@@ -1713,7 +1745,7 @@ static int read_script_line(FILE *fp, char *line, int line_size, int *script_lin
     return 1;
 }
 
-static int save_game_state(void)
+static int save_game_state(const char *filename)
 {
     FILE *fp;
     SaveData save_data;
@@ -1724,42 +1756,43 @@ static int save_game_state(void)
     save_data.state = g_state;
     memcpy(save_data.flags, g_flags, sizeof(g_flags));
 
-    fp = fopen("SAVE.DAT", "wb");
+    fp = fopen(filename, "wb");
     if (fp == 0) {
-        debug_log("SAVE FAILED open file=SAVE.DAT");
+        debug_log("SAVE FAILED open file=%s", filename);
         return 0;
     }
 
     if (fwrite(&save_data, sizeof(save_data), 1, fp) != 1) {
-        debug_log("SAVE FAILED write file=SAVE.DAT");
+        debug_log("SAVE FAILED write file=%s", filename);
         fclose(fp);
         return 0;
     }
 
     fclose(fp);
 
-    debug_log("SAVE OK file=SAVE.DAT version=%d line=%d",
+    debug_log("SAVE OK file=%s version=%d line=%d",
+              filename,
               save_data.version,
               save_data.state.script_line);
 
     return 1;
 }
 
-static int load_game_state(void)
+static int load_game_state(const char *filename)
 {
     FILE *fp;
     SaveData save_data;
 
     memset(&save_data, 0, sizeof(save_data));
 
-    fp = fopen("SAVE.DAT", "rb");
+    fp = fopen(filename, "rb");
     if (fp == 0) {
-        debug_log("LOAD FAILED open file=SAVE.DAT");
+        debug_log("LOAD FAILED open file=%s", filename);
         return 0;
     }
 
     if (fread(&save_data, sizeof(save_data), 1, fp) != 1) {
-        debug_log("LOAD FAILED read file=SAVE.DAT");
+        debug_log("LOAD FAILED read file=%s", filename);
         fclose(fp);
         return 0;
     }
@@ -1781,7 +1814,8 @@ static int load_game_state(void)
     g_state = save_data.state;
     memcpy(g_flags, save_data.flags, sizeof(g_flags));
 
-    debug_log("LOAD OK file=SAVE.DAT version=%d line=%d",
+    debug_log("LOAD OK file=%s version=%d line=%d",
+              filename,
               save_data.version,
               save_data.state.script_line);
 
@@ -1828,7 +1862,7 @@ static void resume_script_line(FILE *fp, int *script_line,
 static void handle_save_hotkey(uint8_t ch)
 {
     (void)ch;
-    save_game_state();
+    show_save_menu();
 }
 
 static void resume_bgm_after_load(void)
@@ -1851,16 +1885,19 @@ static void resume_bgm_after_load(void)
     }
 }
 
-static void handle_load_hotkey(uint8_t ch)
+static int handle_load_hotkey(uint8_t ch)
 {
     (void)ch;
 
-    if (load_game_state()) {
+    if (show_load_menu()) {
         resume_bgm_after_load();
 
         g_request_scene_redraw = 1;
         g_request_script_resume = 1;
+        return 1;
     }
+
+    return 0;
 }
 
 
@@ -2614,6 +2651,47 @@ static void ui_draw_current_stands(enum StandId left_stand,
 {
     ui_draw_stand(left_stand, left_face, STAND_LEFT_X, STAND_Y, 0);
     ui_draw_stand(right_stand, right_face, STAND_RIGHT_X, STAND_Y, 1);
+}
+
+static int show_selection_menu(const char *const *items, int item_count)
+{
+    int i;
+
+    if (items == 0 || item_count < 1 || item_count > MAX_CHOICE_ITEMS) {
+        return 0;
+    }
+
+    for (i = 0; i < MAX_CHOICE_ITEMS; ++i) {
+        g_choice_work_lens[i] = 0;
+    }
+
+    for (i = 0; i < item_count; ++i) {
+        store_choice_line(i, items[i]);
+    }
+
+    return input_wait_choice_jis(item_count);
+}
+
+static void show_save_menu(void)
+{
+    int selected;
+
+    selected = show_selection_menu(g_save_menu_items, SAVE_MENU_ITEM_COUNT);
+    if (selected >= 1 && selected <= SAVE_SLOT_COUNT) {
+        save_game_state(g_save_slot_files[selected - 1]);
+    }
+}
+
+static int show_load_menu(void)
+{
+    int selected;
+
+    selected = show_selection_menu(g_load_menu_items, SAVE_MENU_ITEM_COUNT);
+    if (selected >= 1 && selected <= SAVE_SLOT_COUNT) {
+        return load_game_state(g_save_slot_files[selected - 1]);
+    }
+
+    return 0;
 }
 
 

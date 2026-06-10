@@ -255,6 +255,7 @@ static void debug_log(const char *fmt, ...);
 static int read_script_line(FILE *fp, char *line, int line_size, int *script_line);
 static int save_game_state(const char *filename);
 static int load_game_state(const char *filename);
+static void restore_palette_after_load(void);
 static void show_save_menu(void);
 static int show_load_menu(void);
 static void ui_draw_title_screen(void);
@@ -1833,6 +1834,53 @@ static int load_game_state(const char *filename)
     return 1;
 }
 
+static void restore_palette_after_load(void)
+{
+    FILE *fp;
+    char line[256];
+    char palette_path[64];
+    char cmd[32];
+    char arg1[64];
+    int line_number;
+
+    strcpy(palette_path, "adv.pal");
+
+    fp = fopen("script.txt", "rb");
+    if (fp != 0) {
+        line_number = 0;
+
+        while (line_number < g_state.script_line &&
+               fgets(line, sizeof(line), fp) != 0) {
+            line_number++;
+            remove_newline(line);
+            trim_leading_spaces(line);
+
+            cmd[0] = '\0';
+            arg1[0] = '\0';
+
+            if (sscanf(line, "%31s %63s", cmd, arg1) >= 2 &&
+                strcmp(cmd, "#pal") == 0) {
+                strcpy(palette_path, arg1);
+            }
+        }
+
+        fclose(fp);
+    } else {
+        debug_log("palette restore failed: script.txt not found");
+    }
+
+    if (!graph98_load_palette_file(palette_path)) {
+        debug_log("palette restore failed: %s", palette_path);
+
+        if (strcmp(palette_path, "adv.pal") != 0 &&
+            graph98_load_palette_file("adv.pal")) {
+            return;
+        }
+
+        graph98_apply_adv_palette();
+    }
+}
+
 static void resume_script_line(FILE *fp, int *script_line,
                                char *current_name, int current_name_size)
 {
@@ -1901,6 +1949,7 @@ static int handle_load_hotkey(uint8_t ch)
     (void)ch;
 
     if (show_load_menu()) {
+        restore_palette_after_load();
         resume_bgm_after_load();
 
         g_request_scene_redraw = 1;
@@ -2708,6 +2757,10 @@ static int show_load_menu(void)
 
 static void ui_draw_title_screen(void)
 {
+    if (!graph98_load_palette_file("TITLE.PAL")) {
+        debug_log("TITLE.PAL load failed. Keeping current palette.");
+    }
+
     graph98_clear(0);
 
     if (!graph98_load_g98("TITLE.G98")) {
@@ -2715,7 +2768,6 @@ static void ui_draw_title_screen(void)
         debug_log("TITLE.G98 load failed. Using black background.");
     }
 
-    graph98_draw_string(293, 150, "ADV98.EXE", 15);
     ui_draw_message_window();
 }
 
@@ -2735,6 +2787,7 @@ static int show_title_menu(void)
 
         if (selected == 2) {
             if (show_load_menu()) {
+                restore_palette_after_load();
                 resume_bgm_after_load();
                 g_request_scene_redraw = 1;
                 g_request_script_resume = 1;

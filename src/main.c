@@ -2709,6 +2709,12 @@ static int show_load_menu(void)
 static void ui_draw_title_screen(void)
 {
     graph98_clear(0);
+
+    if (!graph98_load_g98("TITLE.G98")) {
+        graph98_clear(0);
+        debug_log("TITLE.G98 load failed. Using black background.");
+    }
+
     graph98_draw_string(293, 150, "ADV98.EXE", 15);
     ui_draw_message_window();
 }
@@ -2734,6 +2740,7 @@ static int show_title_menu(void)
                 g_request_script_resume = 1;
                 return 1;
             }
+            ui_draw_title_screen();
             continue;
         }
 

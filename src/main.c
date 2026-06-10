@@ -101,6 +101,7 @@ typedef struct {
 static GameFlag g_flags[MAX_FLAGS];
 static GameState g_state;
 static int g_pmd_available = 0;
+static int g_title_bgm_playing = 0;
 
 // マウス制御
 static int g_mouse_available = 0;
@@ -259,6 +260,8 @@ static void restore_palette_after_load(void);
 static void show_save_menu(void);
 static int show_load_menu(void);
 static void ui_draw_title_screen(void);
+static void title_bgm_start(void);
+static void title_bgm_stop(void);
 static int show_title_menu(void);
 static void extract_name_from_brackets(const char *line, char *out_name, int out_size);
 static void resume_script_line(FILE *fp, int *script_line,
@@ -2771,22 +2774,58 @@ static void ui_draw_title_screen(void)
     ui_draw_message_window();
 }
 
+static void title_bgm_start(void)
+{
+    FILE *fp;
+
+    if (!g_pmd_available || g_title_bgm_playing) {
+        return;
+    }
+
+    fp = fopen("TITLE.M", "rb");
+    if (fp == 0) {
+        return;
+    }
+    fclose(fp);
+
+    if (!pmd_load_music_file("TITLE.M")) {
+        debug_log("TITLE.M load failed.");
+        return;
+    }
+
+    pmd_start_music();
+    g_title_bgm_playing = 1;
+}
+
+static void title_bgm_stop(void)
+{
+    if (!g_pmd_available || !g_title_bgm_playing) {
+        return;
+    }
+
+    pmd_stop_music();
+    g_title_bgm_playing = 0;
+}
+
 static int show_title_menu(void)
 {
     int selected;
 
     ui_draw_title_screen();
+    title_bgm_start();
 
     for (;;) {
         selected = show_selection_menu(g_title_menu_items,
                                        TITLE_MENU_ITEM_COUNT);
 
         if (selected == 1) {
+            title_bgm_stop();
             return 1;
         }
 
         if (selected == 2) {
             if (show_load_menu()) {
+                title_bgm_stop();
                 restore_palette_after_load();
                 resume_bgm_after_load();
                 g_request_scene_redraw = 1;
@@ -2794,10 +2833,12 @@ static int show_title_menu(void)
                 return 1;
             }
             ui_draw_title_screen();
+            title_bgm_start();
             continue;
         }
 
         if (selected == 3) {
+            title_bgm_stop();
             return 0;
         }
     }

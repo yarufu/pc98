@@ -76,6 +76,7 @@ typedef struct {
 #define SAVE_VERSION 1
 #define SAVE_SLOT_COUNT 3
 #define SAVE_MENU_ITEM_COUNT (SAVE_SLOT_COUNT + 1)
+#define TITLE_MENU_ITEM_COUNT 3
 
 typedef struct {
     char bg_name[32];
@@ -155,12 +156,20 @@ static const char g_load_menu_1[] = "\x83\x8D\x81\x5B\x83\x68\x82\x50";
 static const char g_load_menu_2[] = "\x83\x8D\x81\x5B\x83\x68\x82\x51";
 static const char g_load_menu_3[] = "\x83\x8D\x81\x5B\x83\x68\x82\x52";
 static const char g_menu_back[] = "\x96\xDF\x82\xE9";
+/* Shift_JIS: はじめから、ロード、終了 */
+static const char g_title_menu_start[] =
+    "\x82\xCD\x82\xB6\x82\xDF\x82\xA9\x82\xE7";
+static const char g_title_menu_load[] = "\x83\x8D\x81\x5B\x83\x68";
+static const char g_title_menu_exit[] = "\x8F\x49\x97\xB9";
 
 static const char *g_save_menu_items[SAVE_MENU_ITEM_COUNT] = {
     g_save_menu_1, g_save_menu_2, g_save_menu_3, g_menu_back
 };
 static const char *g_load_menu_items[SAVE_MENU_ITEM_COUNT] = {
     g_load_menu_1, g_load_menu_2, g_load_menu_3, g_menu_back
+};
+static const char *g_title_menu_items[TITLE_MENU_ITEM_COUNT] = {
+    g_title_menu_start, g_title_menu_load, g_title_menu_exit
 };
 
 
@@ -248,6 +257,8 @@ static int save_game_state(const char *filename);
 static int load_game_state(const char *filename);
 static void show_save_menu(void);
 static int show_load_menu(void);
+static void ui_draw_title_screen(void);
+static int show_title_menu(void);
 static void extract_name_from_brackets(const char *line, char *out_name, int out_size);
 static void resume_script_line(FILE *fp, int *script_line,
                                char *current_name, int current_name_size);
@@ -2031,13 +2042,14 @@ static void run_script_sjis(void)
 
     current_name[0] = '\0';
 
-    g_state.bg_name[0] = '\0';
-    g_state.script_line = 0;
-    g_state.left_stand = STAND_NONE;
-    g_state.right_stand = STAND_NONE;
-    g_state.left_face = FACE_NORMAL;
-    g_state.right_face = FACE_NORMAL;
-    g_state.bgm[0] = '\0';
+    if (!g_request_script_resume) {
+        memset(g_flags, 0, sizeof(g_flags));
+        memset(&g_state, 0, sizeof(g_state));
+        g_state.left_stand = STAND_NONE;
+        g_state.right_stand = STAND_NONE;
+        g_state.left_face = FACE_NORMAL;
+        g_state.right_face = FACE_NORMAL;
+    }
 
     last_bg_name[0] = '\0';
     last_left_stand = STAND_NONE;
@@ -2694,6 +2706,43 @@ static int show_load_menu(void)
     return 0;
 }
 
+static void ui_draw_title_screen(void)
+{
+    graph98_clear(0);
+    graph98_draw_string(293, 150, "ADV98.EXE", 15);
+    ui_draw_message_window();
+}
+
+static int show_title_menu(void)
+{
+    int selected;
+
+    ui_draw_title_screen();
+
+    for (;;) {
+        selected = show_selection_menu(g_title_menu_items,
+                                       TITLE_MENU_ITEM_COUNT);
+
+        if (selected == 1) {
+            return 1;
+        }
+
+        if (selected == 2) {
+            if (show_load_menu()) {
+                resume_bgm_after_load();
+                g_request_scene_redraw = 1;
+                g_request_script_resume = 1;
+                return 1;
+            }
+            continue;
+        }
+
+        if (selected == 3) {
+            return 0;
+        }
+    }
+}
+
 
 static int input_wait_choice_jis(int choice_count)
 {
@@ -2836,7 +2885,9 @@ int main(void)
     }
 
 
-    run_script_sjis();
+    if (show_title_menu()) {
+        run_script_sjis();
+    }
 
 
     graph98_clear(0);

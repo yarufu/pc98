@@ -77,6 +77,7 @@ typedef struct {
 #define SAVE_SLOT_COUNT 3
 #define SAVE_MENU_ITEM_COUNT (SAVE_SLOT_COUNT + 1)
 #define TITLE_MENU_ITEM_COUNT 3
+#define MOUSE_CHOICE_MOTION_THRESHOLD 32
 
 typedef struct {
     char bg_name[32];
@@ -2850,48 +2851,94 @@ static int input_wait_choice_jis(int choice_count)
     uint8_t ch;
     int selected;
     int next;
+    int mouse_dx;
+    int mouse_dy;
+    long mouse_accum_x;
+    long mouse_accum_y;
+    long mouse_abs_x;
+    long mouse_abs_y;
+    int mouse_direction;
 
     selected = 1;
+    mouse_accum_x = 0;
+    mouse_accum_y = 0;
+
+    if (g_mouse_available) {
+        mouse98_hide_cursor();
+        mouse98_get_motion(0, 0);
+    }
+
+    ui_draw_choice_jis(choice_count, selected);
 
     for (;;) {
-        ui_draw_choice_jis(choice_count, selected);
+        mouse_direction = 0;
 
-        __asm__ __volatile__(
-            "movb $0x08, %%ah\n\t"
-            "int $0x21\n\t"
-            "movb %%al, %0"
-            : "=rm"(ch)
-            :
-            : "ax", "cc", "memory");
+        if (g_mouse_available) {
+            if (mouse98_left_pressed()) {
+                mouse98_wait_left_release();
+                return selected;
+            }
 
-        if (ch == 0x0D) {
-            return selected;
+            mouse98_get_motion(&mouse_dx, &mouse_dy);
+            mouse_accum_x += mouse_dx;
+            mouse_accum_y += mouse_dy;
+            mouse_abs_x = mouse_accum_x >= 0 ? mouse_accum_x : -mouse_accum_x;
+            mouse_abs_y = mouse_accum_y >= 0 ? mouse_accum_y : -mouse_accum_y;
+
+            if (mouse_abs_x >= MOUSE_CHOICE_MOTION_THRESHOLD ||
+                mouse_abs_y >= MOUSE_CHOICE_MOTION_THRESHOLD) {
+                if (mouse_abs_x >= mouse_abs_y) {
+                    mouse_direction = mouse_accum_x > 0 ? 1 : -1;
+                } else {
+                    mouse_direction = mouse_accum_y > 0 ? 2 : -2;
+                }
+            }
+
+            if (mouse_direction != 0) {
+                mouse_accum_x = 0;
+                mouse_accum_y = 0;
+            }
         }
 
         next = selected;
 
-        if (ch == 0x0B || ch == 'W' || ch == 'w' || ch == '8') {
+        if (mouse_direction == -2) {
             next = selected - CHOICE_COLUMNS;
-        }
-
-        if (ch == 0x0A || ch == 'S' || ch == 's' || ch == '2') {
+        } else if (mouse_direction == 2) {
             next = selected + CHOICE_COLUMNS;
-        }
-
-        if (ch == 0x08 || ch == 'A' || ch == 'a' || ch == '4') {
+        } else if (mouse_direction == -1) {
             if ((selected - 1) % CHOICE_COLUMNS != 0) {
                 next = selected - 1;
             }
-        }
-
-        if (ch == 0x0C || ch == 'D' || ch == 'd' || ch == '6') {
+        } else if (mouse_direction == 1) {
             if ((selected - 1) % CHOICE_COLUMNS != CHOICE_COLUMNS - 1) {
                 next = selected + 1;
             }
+        } else if (input_key_available()) {
+            ch = input_read_key();
+
+            if (ch == 0x0D) {
+                return selected;
+            }
+
+            if (ch == 0x0B || ch == 'W' || ch == 'w' || ch == '8') {
+                next = selected - CHOICE_COLUMNS;
+            } else if (ch == 0x0A || ch == 'S' || ch == 's' || ch == '2') {
+                next = selected + CHOICE_COLUMNS;
+            } else if (ch == 0x08 || ch == 'A' || ch == 'a' || ch == '4') {
+                if ((selected - 1) % CHOICE_COLUMNS != 0) {
+                    next = selected - 1;
+                }
+            } else if (ch == 0x0C || ch == 'D' || ch == 'd' || ch == '6') {
+                if ((selected - 1) % CHOICE_COLUMNS != CHOICE_COLUMNS - 1) {
+                    next = selected + 1;
+                }
+            }
         }
 
-        if (next >= 1 && next <= choice_count) {
+        if (next >= 1 && next <= choice_count && next != selected) {
             selected = next;
+            ui_draw_choice_jis(choice_count, selected);
         }
     }
 }

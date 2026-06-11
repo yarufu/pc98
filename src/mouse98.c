@@ -37,3 +37,35 @@ void mouse98_wait_left_release(void)
     while (mouse98_left_pressed()) {
     }
 }
+
+void mouse98_get_motion(int *dx, int *dy)
+{
+    uint16_t cx;
+    uint16_t dx_reg;
+
+    __asm__ __volatile__(
+        "movw $0x000B, %%ax\n\t"
+        "int $0x33\n\t"
+        "movw %%cx, %0\n\t"
+        "movw %%dx, %1"
+        : "=m"(cx), "=m"(dx_reg)
+        :
+        : "ax", "bx", "cx", "dx", "cc", "memory");
+
+    if (dx != 0) {
+        *dx = (int)(int16_t)cx;
+    }
+    if (dy != 0) {
+        *dy = (int)(int16_t)dx_reg;
+    }
+}
+
+void mouse98_hide_cursor(void)
+{
+    __asm__ __volatile__(
+        "movw $0x0002, %%ax\n\t"
+        "int $0x33"
+        :
+        :
+        : "ax", "bx", "cx", "dx", "cc", "memory");
+}

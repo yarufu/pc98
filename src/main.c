@@ -79,6 +79,7 @@ typedef struct {
 #define TITLE_MENU_ITEM_COUNT 3
 #define SYSTEM_MENU_ITEM_COUNT 3
 #define MOUSE_CHOICE_MOTION_THRESHOLD 16
+#define CHOICE_RESULT_LOAD_RESUME 0
 
 enum SystemAction {
     SYSTEM_ACTION_NONE = 0,
@@ -151,6 +152,8 @@ static int g_choice_band_y1[MAX_CHOICE_ITEMS] = {332, 332, 354, 354, 376, 376};
 static uint16_t g_choice_work_jis[MAX_CHOICE_ITEMS][MAX_CHOICE_CHARS];
 static int g_choice_work_lens[MAX_CHOICE_ITEMS];
 static char g_choice_work_line[256];
+static uint16_t g_choice_saved_jis[MAX_CHOICE_ITEMS][MAX_CHOICE_CHARS];
+static int g_choice_saved_lens[MAX_CHOICE_ITEMS];
 
 static const char *g_save_slot_files[SAVE_SLOT_COUNT] = {
     "SAVE1.DAT",
@@ -240,7 +243,7 @@ static void ui_draw_current_stands(enum StandId left_stand,
                                    enum StandId right_stand,
                                    enum FaceId right_face);
 static int show_selection_menu(const char *const *items, int item_count);
-static int input_wait_choice_jis(int choice_count)
+static int input_wait_choice_jis(int choice_count, int allow_save_load)
     __attribute__((noinline,optimize("O0")));
 static void handle_choice_block(FILE *fp, int *script_line)
     __attribute__((noinline,optimize("O0")));
@@ -276,6 +279,7 @@ static int read_script_line(FILE *fp, char *line, int line_size, int *script_lin
 static int save_game_state(const char *filename);
 static int load_game_state(const char *filename);
 static void restore_palette_after_load(void);
+static void restore_scene_after_load(void);
 static void show_save_menu(void);
 static int show_load_menu(void);
 static enum SystemAction show_system_menu(void);
@@ -1980,13 +1984,19 @@ static void resume_bgm_after_load(void)
     }
 }
 
+static void restore_scene_after_load(void)
+{
+    restore_palette_after_load();
+    ui_redraw_current_scene_from_state();
+    resume_bgm_after_load();
+}
+
 static int handle_load_hotkey(uint8_t ch)
 {
     (void)ch;
 
     if (show_load_menu()) {
-        restore_palette_after_load();
-        resume_bgm_after_load();
+        restore_scene_after_load();
 
         g_request_scene_redraw = 1;
         g_request_script_resume = 1;
@@ -2315,14 +2325,13 @@ static void run_script_sjis(void)
                         continue;
                     }
 
+                    strcpy(g_state.bgm, arg1);
+
                     if (g_pmd_available) {
 
                         pmd_stop_music();
 
                         if (pmd_load_music_file(arg1)) {
-
-                            strcpy(g_state.bgm, arg1);
-
                             pmd_start_music();
                         }else{
                             debug_log("bgm load failed: %s", arg1);
@@ -2770,7 +2779,7 @@ static int show_selection_menu(const char *const *items, int item_count)
         store_choice_line(i, items[i]);
     }
 
-    return input_wait_choice_jis(item_count);
+    return input_wait_choice_jis(item_count, 0);
 }
 
 static void show_save_menu(void)
@@ -2886,8 +2895,7 @@ static int show_title_menu(void)
         if (selected == 2) {
             if (show_load_menu()) {
                 title_bgm_stop();
-                restore_palette_after_load();
-                resume_bgm_after_load();
+                restore_scene_after_load();
                 g_request_scene_redraw = 1;
                 g_request_script_resume = 1;
                 return 1;
@@ -2905,7 +2913,7 @@ static int show_title_menu(void)
 }
 
 
-static int input_wait_choice_jis(int choice_count)
+static int input_wait_choice_jis(int choice_count, int allow_save_load)
 {
     uint8_t ch;
     int selected;
@@ -2980,19 +2988,73 @@ static int input_wait_choice_jis(int choice_count)
                 return selected;
             }
 
-            if (ch == 0x0B || ch == 'W' || ch == 'w' || ch == '8') {
+            if (allow_save_load &&
+                (ch == 'S' || ch == 's') && g_save_key_armed) {
+                memcpy(g_choice_saved_jis, g_choice_work_jis,
+                       sizeof(g_choice_saved_jis));
+                memcpy(g_choice_saved_lens, g_choice_work_lens,
+                       sizeof(g_choice_saved_lens));
+
+                show_save_menu();
+                g_save_key_armed = 0;
+
+                memcpy(g_choice_work_jis, g_choice_saved_jis,
+                       sizeof(g_choice_work_jis));
+                memcpy(g_choice_work_lens, g_choice_saved_lens,
+                       sizeof(g_choice_work_lens));
+                mouse_accum_x = 0;
+                mouse_accum_y = 0;
+                ui_draw_choice_jis(choice_count, selected);
+                continue;
+            }
+
+            if (allow_save_load &&
+                (ch == 'L' || ch == 'l') && g_load_key_armed) {
+                memcpy(g_choice_saved_jis, g_choice_work_jis,
+                       sizeof(g_choice_saved_jis));
+                memcpy(g_choice_saved_lens, g_choice_work_lens,
+                       sizeof(g_choice_saved_lens));
+
+                g_load_key_armed = 0;
+                if (handle_load_hotkey(ch)) {
+                    return CHOICE_RESULT_LOAD_RESUME;
+                }
+
+                memcpy(g_choice_work_jis, g_choice_saved_jis,
+                       sizeof(g_choice_work_jis));
+                memcpy(g_choice_work_lens, g_choice_saved_lens,
+                       sizeof(g_choice_work_lens));
+                mouse_accum_x = 0;
+                mouse_accum_y = 0;
+                ui_draw_choice_jis(choice_count, selected);
+                continue;
+            }
+
+            if (allow_save_load) {
+                if (ch != 'S' && ch != 's') {
+                    g_save_key_armed = 1;
+                }
+                if (ch != 'L' && ch != 'l') {
+                    g_load_key_armed = 1;
+                }
+            }
+
+            if (ch == 0x0B || ch == '8') {
                 next = selected - CHOICE_COLUMNS;
-            } else if (ch == 0x0A || ch == 'S' || ch == 's' || ch == '2') {
+            } else if (ch == 0x0A || ch == '2') {
                 next = selected + CHOICE_COLUMNS;
-            } else if (ch == 0x08 || ch == 'A' || ch == 'a' || ch == '4') {
+            } else if (ch == 0x08 || ch == '4') {
                 if ((selected - 1) % CHOICE_COLUMNS != 0) {
                     next = selected - 1;
                 }
-            } else if (ch == 0x0C || ch == 'D' || ch == 'd' || ch == '6') {
+            } else if (ch == 0x0C || ch == '6') {
                 if ((selected - 1) % CHOICE_COLUMNS != CHOICE_COLUMNS - 1) {
                     next = selected + 1;
                 }
             }
+        } else if (allow_save_load) {
+            g_save_key_armed = 1;
+            g_load_key_armed = 1;
         }
 
         if (next >= 1 && next <= choice_count && next != selected) {
@@ -3019,7 +3081,11 @@ static void handle_choice_block(FILE *fp, int *script_line)
 {
     int i;
     int choice_count;
+    int choice_start_line;
+    int choice_end_line;
     int selected;
+
+    choice_start_line = *script_line;
 
     for (i = 0; i < MAX_CHOICE_ITEMS; ++i) {
         g_choice_work_lens[i] = 0;
@@ -3045,11 +3111,20 @@ static void handle_choice_block(FILE *fp, int *script_line)
         }
     }
 
+    choice_end_line = *script_line;
+
     if (choice_count < 2) {
+        g_state.script_line = choice_end_line;
         return;
     }
 
-    selected = input_wait_choice_jis(choice_count);
+    g_state.script_line = choice_start_line;
+    selected = input_wait_choice_jis(choice_count, 1);
+    if (selected == CHOICE_RESULT_LOAD_RESUME) {
+        return;
+    }
+
+    g_state.script_line = choice_end_line;
     set_flag_value("choice", selected);
 }
 

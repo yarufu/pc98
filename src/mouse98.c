@@ -38,6 +38,27 @@ void mouse98_wait_left_release(void)
     }
 }
 
+int mouse98_right_pressed(void)
+{
+    uint16_t bx;
+
+    __asm__ __volatile__(
+        "movw $0x0003, %%ax\n\t"
+        "int $0x33\n\t"
+        "movw %%bx, %0"
+        : "=m"(bx)
+        :
+        : "ax", "bx", "cx", "dx", "cc", "memory");
+
+    return (bx & 0x0002) != 0;
+}
+
+void mouse98_wait_right_release(void)
+{
+    while (mouse98_right_pressed()) {
+    }
+}
+
 void mouse98_get_motion(int *dx, int *dy)
 {
     uint16_t cx;

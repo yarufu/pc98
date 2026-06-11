@@ -287,6 +287,7 @@ static void ui_draw_title_screen(void);
 static void title_bgm_start(void);
 static void title_bgm_stop(void);
 static int show_title_menu(void);
+static void app_cleanup(void);
 static void extract_name_from_brackets(const char *line, char *out_name, int out_size);
 static void resume_script_line(FILE *fp, int *script_line,
                                char *current_name, int current_name_size);
@@ -2818,9 +2819,6 @@ static enum SystemAction show_system_menu(void)
     }
 
     if (selected == 3) {
-        if (g_pmd_available) {
-            pmd_stop_music();
-        }
         return SYSTEM_ACTION_EXIT;
     }
 
@@ -2906,10 +2904,22 @@ static int show_title_menu(void)
         }
 
         if (selected == 3) {
-            title_bgm_stop();
             return 0;
         }
     }
+}
+
+static void app_cleanup(void)
+{
+    if (g_pmd_available) {
+        pmd_stop_music();
+    }
+    g_title_bgm_playing = 0;
+
+    graph98_clear(0);
+    text98_clear_screen();
+    debug_log("ADV98 END");
+    printf("ADV98.EXE finished.\n");
 }
 
 
@@ -3182,10 +3192,7 @@ int main(void)
     }
 
 
-    graph98_clear(0);
-    text98_clear_screen();
-    debug_log("ADV98 END");
-    printf("ADV98.EXE finished.\n");
+    app_cleanup();
 
     return 0;
 }

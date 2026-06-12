@@ -187,6 +187,9 @@ static const char g_system_menu_title[] =
     "\x83\x5E\x83\x43\x83\x67\x83\x8B\x82\xD6\x96\xDF\x82\xE9";
 static const char g_system_menu_exit[] =
     "\x83\x51\x81\x5B\x83\x80\x8F\x49\x97\xB9";
+/* Shift_JIS: セーブしました */
+static const char g_notice_saved[] =
+    "\x83\x5A\x81\x5B\x83\x75\x82\xB5\x82\xDC\x82\xB5\x82\xBD";
 
 static const char *g_save_menu_items[SAVE_MENU_ITEM_COUNT] = {
     g_save_menu_1, g_save_menu_2, g_save_menu_3, g_menu_back
@@ -286,6 +289,7 @@ static int save_game_state(const char *filename);
 static int load_game_state(const char *filename);
 static void restore_palette_after_load(void);
 static void restore_scene_after_load(void);
+static void ui_show_notice(const char *message);
 static void show_save_menu(void);
 static int show_load_menu(void);
 static enum SystemAction show_system_menu(void);
@@ -2092,6 +2096,67 @@ static int convert_sjis_string_to_jis_array(const unsigned char *src,
     return count;
 }
 
+static void ui_show_notice(const char *message)
+{
+    static unsigned char notice_fonts[MAX_CHOICE_CHARS][32];
+    static const unsigned char *line_fonts[MAX_CHOICE_CHARS];
+    uint16_t message_jis[MAX_CHOICE_CHARS];
+    uint8_t ch;
+    int message_len;
+    int i;
+    int width;
+    int x0;
+    int y0;
+    int x1;
+    int y1;
+
+    if (message == 0 || message[0] == '\0') {
+        return;
+    }
+
+    message_len = convert_sjis_string_to_jis_array(
+        (const unsigned char *)message,
+        message_jis,
+        MAX_CHOICE_CHARS);
+    if (message_len <= 0) {
+        return;
+    }
+
+    width = message_len * 16 + 32;
+    x0 = (640 - width) / 2;
+    x1 = x0 + width - 1;
+    y0 = 176;
+    y1 = 223;
+
+    graph98_boxfill(x0, y0, x1, y1, 0);
+    graph98_rect(x0, y0, x1, y1, 15);
+
+    for (i = 0; i < message_len; ++i) {
+        get_kanji_font(message_jis[i], notice_fonts[i]);
+        line_fonts[i] = notice_fonts[i];
+    }
+
+    draw_string_kanji(x0 + 16, y0 + 16, line_fonts, message_len);
+
+    for (;;) {
+        if (g_mouse_available && mouse98_left_pressed()) {
+            mouse98_wait_left_release();
+            break;
+        }
+
+        if (!input_key_available()) {
+            continue;
+        }
+
+        ch = input_read_key();
+        if (ch == 0x0D) {
+            break;
+        }
+    }
+
+    ui_redraw_current_scene_from_state();
+}
+
 // [名前] から名前部分だけ取り出す
 static void extract_name_from_brackets(const char *line, char *out_name, int out_size)
 {
@@ -2804,7 +2869,9 @@ static void show_save_menu(void)
 
     selected = show_selection_menu(g_save_menu_items, SAVE_MENU_ITEM_COUNT);
     if (selected >= 1 && selected <= SAVE_SLOT_COUNT) {
-        save_game_state(g_save_slot_files[selected - 1]);
+        if (save_game_state(g_save_slot_files[selected - 1])) {
+            ui_show_notice(g_notice_saved);
+        }
     }
 }
 

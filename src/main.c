@@ -77,7 +77,7 @@ typedef struct {
 #define SAVE_SLOT_COUNT 3
 #define SAVE_MENU_ITEM_COUNT (SAVE_SLOT_COUNT + 1)
 #define TITLE_MENU_ITEM_COUNT 3
-#define SYSTEM_MENU_ITEM_COUNT 3
+#define SYSTEM_MENU_ITEM_COUNT 5
 #define MOUSE_CHOICE_MOTION_THRESHOLD 16
 #define CHOICE_RESULT_LOAD_RESUME 0
 
@@ -180,7 +180,11 @@ static const char g_title_menu_start[] =
     "\x82\xCD\x82\xB6\x82\xDF\x82\xA9\x82\xE7";
 static const char g_title_menu_load[] = "\x83\x8D\x81\x5B\x83\x68";
 static const char g_title_menu_exit[] = "\x8F\x49\x97\xB9";
-/* Shift_JIS: キャンセル、タイトルへ戻る、ゲーム終了 */
+/* Shift_JIS: セーブ、ロード、タイトルへ戻る、ゲーム終了、キャンセル */
+static const char g_system_menu_save[] =
+    "\x83\x5A\x81\x5B\x83\x75";
+static const char g_system_menu_load[] =
+    "\x83\x8D\x81\x5B\x83\x68";
 static const char g_system_menu_cancel[] =
     "\x83\x4C\x83\x83\x83\x93\x83\x5A\x83\x8B";
 static const char g_system_menu_title[] =
@@ -201,7 +205,11 @@ static const char *g_title_menu_items[TITLE_MENU_ITEM_COUNT] = {
     g_title_menu_start, g_title_menu_load, g_title_menu_exit
 };
 static const char *g_system_menu_items[SYSTEM_MENU_ITEM_COUNT] = {
-    g_system_menu_cancel, g_system_menu_title, g_system_menu_exit
+    g_system_menu_save,
+    g_system_menu_load,
+    g_system_menu_title,
+    g_system_menu_exit,
+    g_system_menu_cancel
 };
 
 
@@ -1300,6 +1308,9 @@ static int input_wait_key(void)
         if (g_mouse_available && mouse98_right_pressed()) {
             mouse98_wait_right_release();
             g_system_action = show_system_menu();
+            if (g_request_script_resume) {
+                return 1;
+            }
             if (g_system_action == SYSTEM_ACTION_NONE) {
                 return 0;
             }
@@ -2273,6 +2284,9 @@ static enum GameResult run_script_sjis(void)
 
             if (strcmp(cmd, "#choice") == 0) {
                 handle_choice_block(fp, &script_line);
+                if (g_system_action != SYSTEM_ACTION_NONE) {
+                    break;
+                }
                 continue;
             }
 
@@ -2893,14 +2907,24 @@ static enum SystemAction show_system_menu(void)
 
     selected = show_selection_menu(g_system_menu_items,
                                    SYSTEM_MENU_ITEM_COUNT);
+    if (selected == 1) {
+        show_save_menu();
+        return SYSTEM_ACTION_NONE;
+    }
+
     if (selected == 2) {
+        handle_load_hotkey(0);
+        return SYSTEM_ACTION_NONE;
+    }
+
+    if (selected == 3) {
         if (g_pmd_available) {
             pmd_stop_music();
         }
         return SYSTEM_ACTION_TITLE;
     }
 
-    if (selected == 3) {
+    if (selected == 4) {
         return SYSTEM_ACTION_EXIT;
     }
 
@@ -3036,6 +3060,30 @@ static int input_wait_choice_jis(int choice_count, int allow_save_load)
             if (mouse98_left_pressed()) {
                 mouse98_wait_left_release();
                 return selected;
+            }
+
+            if (allow_save_load && mouse98_right_pressed()) {
+                mouse98_wait_right_release();
+
+                memcpy(g_choice_saved_jis, g_choice_work_jis,
+                       sizeof(g_choice_saved_jis));
+                memcpy(g_choice_saved_lens, g_choice_work_lens,
+                       sizeof(g_choice_saved_lens));
+
+                g_system_action = show_system_menu();
+                if (g_request_script_resume ||
+                    g_system_action != SYSTEM_ACTION_NONE) {
+                    return CHOICE_RESULT_LOAD_RESUME;
+                }
+
+                memcpy(g_choice_work_jis, g_choice_saved_jis,
+                       sizeof(g_choice_work_jis));
+                memcpy(g_choice_work_lens, g_choice_saved_lens,
+                       sizeof(g_choice_work_lens));
+                mouse_accum_x = 0;
+                mouse_accum_y = 0;
+                ui_draw_choice_jis(choice_count, selected);
+                continue;
             }
 
             mouse98_get_motion(&mouse_dx, &mouse_dy);

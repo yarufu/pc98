@@ -87,6 +87,12 @@ enum SystemAction {
     SYSTEM_ACTION_EXIT
 };
 
+enum GameResult {
+    GAME_RESULT_SCRIPT_END = 0,
+    GAME_RESULT_RETURN_TO_TITLE,
+    GAME_RESULT_EXIT_TO_DOS
+};
+
 typedef struct {
     char bg_name[32];
     int script_line;
@@ -2104,7 +2110,7 @@ static void extract_name_from_brackets(const char *line, char *out_name, int out
 }
 
 // 日本語 script.txt を再生する関数
-static void run_script_sjis(void)
+static enum GameResult run_script_sjis(void)
 {
     FILE *fp;
     char line[256];
@@ -2157,7 +2163,7 @@ static void run_script_sjis(void)
     fp = fopen("script.txt", "rb");
     if (fp == 0) {
         debug_log("script.txt not found.");
-        return;
+        return GAME_RESULT_EXIT_TO_DOS;
     }
 
     for (;;) {
@@ -2566,6 +2572,15 @@ static void run_script_sjis(void)
     }
 
     fclose(fp);
+
+    if (g_system_action == SYSTEM_ACTION_EXIT) {
+        return GAME_RESULT_EXIT_TO_DOS;
+    }
+    if (g_system_action == SYSTEM_ACTION_TITLE) {
+        return GAME_RESULT_RETURN_TO_TITLE;
+    }
+
+    return GAME_RESULT_SCRIPT_END;
 }
 
 // スクリプト再生関数
@@ -3140,6 +3155,7 @@ static void handle_choice_block(FILE *fp, int *script_line)
 
 int main(void)
 {
+    enum GameResult game_result;
 
         remove("debug.txt");
         debug_log("ADV98 START");
@@ -3184,9 +3200,14 @@ int main(void)
             break;
         }
 
-        run_script_sjis();
+        game_result = run_script_sjis();
 
-        if (g_system_action != SYSTEM_ACTION_TITLE) {
+        if (game_result == GAME_RESULT_SCRIPT_END ||
+            game_result == GAME_RESULT_RETURN_TO_TITLE) {
+            continue;
+        }
+
+        if (game_result == GAME_RESULT_EXIT_TO_DOS) {
             break;
         }
     }

@@ -73,7 +73,8 @@ typedef struct {
 #define MAX_CHOICE_CHARS 64
 #define MAX_CHOICE_DRAW_CHARS 8
 #define CHOICE_COLUMNS 2
-#define SAVE_VERSION 1
+#define CALL_STACK_MAX 8
+#define SAVE_VERSION 2
 #define SAVE_SLOT_COUNT 3
 #define SAVE_MENU_ITEM_COUNT (SAVE_SLOT_COUNT + 1)
 #define TITLE_MENU_ITEM_COUNT 3
@@ -96,6 +97,8 @@ enum GameResult {
 typedef struct {
     char bg_name[32];
     int script_line;
+    int call_stack[CALL_STACK_MAX];
+    int call_stack_depth;
 
     enum StandId left_stand;
     enum FaceId left_face;
@@ -267,6 +270,7 @@ static void handle_choice_block(FILE *fp, int *script_line)
 static void store_choice_line(int index, const char *line) __attribute__((noinline));
 static int find_label_and_jump(FILE *fp, int *script_line,
                                const char *label_name);
+static int seek_script_after_line(FILE *fp, int *script_line, int target_line);
 static void trim_leading_spaces(char *str);
 static int find_flag_index(const char *name);
 static void set_flag_on(const char *name);
@@ -1632,6 +1636,27 @@ static int find_label_and_jump(FILE *fp, int *script_line, const char *label_nam
     return 0;
 }
 
+/* target_line を読み終えた状態にし、次の read_script_line() から再開する。 */
+static int seek_script_after_line(FILE *fp, int *script_line, int target_line)
+{
+    char line[256];
+
+    if (fp == 0 || script_line == 0 || target_line < 0) {
+        return 0;
+    }
+
+    fseek(fp, 0L, SEEK_SET);
+    *script_line = 0;
+
+    while (*script_line < target_line) {
+        if (!read_script_line(fp, line, sizeof(line), script_line)) {
+            return 0;
+        }
+    }
+
+    return 1;
+}
+
 // フラグ関数
 static int find_flag_index(const char *name)
 {
@@ -2301,6 +2326,75 @@ static enum GameResult run_script_sjis(void)
             if (strcmp(cmd, "#jump") == 0) {
                 if (count >= 2) {
                     find_label_and_jump(fp, &script_line, arg1);
+                }
+                continue;
+            }
+
+            if (strcmp(cmd, "#call") == 0) {
+                if (count >= 2) {
+                    long return_file_pos;
+                    int return_line;
+
+                    if (g_state.call_stack_depth < 0 ||
+                        g_state.call_stack_depth > CALL_STACK_MAX) {
+                        debug_log("SCRIPT CALL invalid stack depth=%d; reset",
+                                  g_state.call_stack_depth);
+                        g_state.call_stack_depth = 0;
+                    }
+
+                    if (g_state.call_stack_depth >= CALL_STACK_MAX) {
+                        debug_log("SCRIPT CALL stack full label=%s", arg1);
+                        continue;
+                    }
+
+                    return_file_pos = ftell(fp);
+                    return_line = script_line;
+
+                    if (find_label_and_jump(fp, &script_line, arg1)) {
+                        g_state.call_stack[g_state.call_stack_depth] = return_line;
+                        g_state.call_stack_depth++;
+                        debug_log("SCRIPT CALL label=%s return_line=%d depth=%d",
+                                  arg1, return_line,
+                                  g_state.call_stack_depth);
+                    } else {
+                        if (return_file_pos >= 0) {
+                            fseek(fp, return_file_pos, SEEK_SET);
+                        } else {
+                            seek_script_after_line(fp, &script_line, return_line);
+                        }
+                        script_line = return_line;
+                        g_state.script_line = script_line;
+                        debug_log("SCRIPT CALL label not found: %s", arg1);
+                    }
+                } else {
+                    debug_log("SCRIPT CALL missing label");
+                }
+                continue;
+            }
+
+            if (strcmp(cmd, "#return") == 0) {
+                int return_line;
+
+                if (g_state.call_stack_depth <= 0 ||
+                    g_state.call_stack_depth > CALL_STACK_MAX) {
+                    debug_log("SCRIPT RETURN without call depth=%d",
+                              g_state.call_stack_depth);
+                    if (g_state.call_stack_depth < 0 ||
+                        g_state.call_stack_depth > CALL_STACK_MAX) {
+                        g_state.call_stack_depth = 0;
+                    }
+                    continue;
+                }
+
+                return_line =
+                    g_state.call_stack[g_state.call_stack_depth - 1];
+                if (seek_script_after_line(fp, &script_line, return_line)) {
+                    g_state.call_stack_depth--;
+                    g_state.script_line = script_line;
+                    debug_log("SCRIPT RETURN line=%d depth=%d",
+                              return_line, g_state.call_stack_depth);
+                } else {
+                    debug_log("SCRIPT RETURN invalid line=%d", return_line);
                 }
                 continue;
             }

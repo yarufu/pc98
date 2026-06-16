@@ -2065,7 +2065,7 @@ static uint16_t sjis_to_jis(uint8_t sjis_hi, uint8_t sjis_lo)
         if (sjis_hi <= 0x9F) {
             row = (uint8_t)((sjis_hi - 0x81) * 2 + 0x21);
         } else {
-            row = (uint8_t)((sjis_hi - 0xC1) * 2 + 0x5F);
+            row = (uint8_t)((sjis_hi - 0xE0) * 2 + 0x5F);
         }
 
         if (sjis_lo >= 0x7F) {
@@ -2076,7 +2076,7 @@ static uint16_t sjis_to_jis(uint8_t sjis_hi, uint8_t sjis_lo)
         if (sjis_hi <= 0x9F) {
             row = (uint8_t)((sjis_hi - 0x81) * 2 + 0x22);
         } else {
-            row = (uint8_t)((sjis_hi - 0xC1) * 2 + 0x60);
+            row = (uint8_t)((sjis_hi - 0xE0) * 2 + 0x60);
         }
 
         cell = (uint8_t)(sjis_lo - 0x7E);
@@ -2117,7 +2117,8 @@ static int convert_sjis_string_to_jis_array(const unsigned char *src,
             }
 
             c2 = *src;
-            dst[count++] = sjis_to_jis(c, c2);
+            dst[count] = sjis_to_jis(c, c2);
+            count++;
             src++;
             continue;
         }

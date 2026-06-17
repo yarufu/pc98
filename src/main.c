@@ -2085,10 +2085,34 @@ static uint16_t sjis_to_jis(uint8_t sjis_hi, uint8_t sjis_lo)
     return (uint16_t)(((uint16_t)row << 8) | cell);
 }
 
-// 文字列全体を Shift_JIS → JIS配列へ変換
-static int convert_sjis_string_to_jis_array(const unsigned char *src,
-                                            uint16_t *dst,
-                                            int max_chars)
+static uint16_t ascii_to_fullwidth_jis(uint8_t c)
+{
+    static const uint16_t ascii_fullwidth_jis[0x5F] = {
+        0x2121, 0x212A, 0x7C7E, 0x2174, 0x2170, 0x2173, 0x2175, 0x7C7D,
+        0x214A, 0x214B, 0x2176, 0x215C, 0x2124, 0x215D, 0x2125, 0x213F,
+        0x2330, 0x2331, 0x2332, 0x2333, 0x2334, 0x2335, 0x2336, 0x2337,
+        0x2338, 0x2339, 0x2127, 0x2128, 0x2163, 0x2161, 0x2164, 0x2129,
+        0x2177, 0x2341, 0x2342, 0x2343, 0x2344, 0x2345, 0x2346, 0x2347,
+        0x2348, 0x2349, 0x234A, 0x234B, 0x234C, 0x234D, 0x234E, 0x234F,
+        0x2350, 0x2351, 0x2352, 0x2353, 0x2354, 0x2355, 0x2356, 0x2357,
+        0x2358, 0x2359, 0x235A, 0x214E, 0x2140, 0x214F, 0x2130, 0x2132,
+        0x212E, 0x2361, 0x2362, 0x2363, 0x2364, 0x2365, 0x2366, 0x2367,
+        0x2368, 0x2369, 0x236A, 0x236B, 0x236C, 0x236D, 0x236E, 0x236F,
+        0x2370, 0x2371, 0x2372, 0x2373, 0x2374, 0x2375, 0x2376, 0x2377,
+        0x2378, 0x2379, 0x237A, 0x2150, 0x2143, 0x2151, 0x2141
+    };
+
+    if (c < 0x20 || c > 0x7E) {
+        return 0;
+    }
+
+    return ascii_fullwidth_jis[c - 0x20];
+}
+
+static int convert_sjis_string_to_jis_array_core(const unsigned char *src,
+                                                 uint16_t *dst,
+                                                 int max_chars,
+                                                 int convert_ascii)
 {
     int count;
 
@@ -2102,6 +2126,12 @@ static int convert_sjis_string_to_jis_array(const unsigned char *src,
         /* 半角スペース */
         if (c == 0x20) {
             dst[count++] = 0x2121;
+            src++;
+            continue;
+        }
+
+        if (convert_ascii && c >= 0x21 && c <= 0x7E) {
+            dst[count++] = ascii_to_fullwidth_jis(c);
             src++;
             continue;
         }
@@ -2124,13 +2154,29 @@ static int convert_sjis_string_to_jis_array(const unsigned char *src,
         }
 
         /*
-         * 半角英数・記号は今回は無視。
-         * 必要なら後で対応追加。
+         * ここに来る1バイト文字は無視する。
+         * 本文・名前欄では convert_ascii=1 により ASCII は全角変換済み。
          */
         src++;
     }
 
     return count;
+}
+
+// 文字列全体を Shift_JIS → JIS配列へ変換
+static int convert_sjis_string_to_jis_array(const unsigned char *src,
+                                            uint16_t *dst,
+                                            int max_chars)
+{
+    return convert_sjis_string_to_jis_array_core(src, dst, max_chars, 0);
+}
+
+// 本文メッセージ用。半角ASCIIを全角JISへ変換して表示欠けを防ぐ。
+static int convert_message_text_sjis_to_jis_array(const unsigned char *src,
+                                                  uint16_t *dst,
+                                                  int max_chars)
+{
+    return convert_sjis_string_to_jis_array_core(src, dst, max_chars, 1);
 }
 
 static void ui_show_notice(const char *message)
@@ -2600,13 +2646,13 @@ static enum GameResult run_script_sjis(void)
             continue;
         }
 
-        name_len = convert_sjis_string_to_jis_array(
+        name_len = convert_message_text_sjis_to_jis_array(
             (const unsigned char *)current_name,
             name_jis,
             64
         );
 
-        text_len = convert_sjis_string_to_jis_array(
+        text_len = convert_message_text_sjis_to_jis_array(
             (const unsigned char *)line,
             text_jis,
             128

@@ -1,13 +1,399 @@
 #pal adv.pal
 #bgwipe class
-#bgm kirakira.m
+#bgm PLAY.M
 #rightwipe character02 normal
 
-[TEST]
-ABC abc 123
+[健一]
+ここ、静かだな
+
 
 []
-Version 0.1
+放課後。
+誰もいない教室には、夕日だけが差し込んでいた。
+そんな中、僕を呼び出した張本人は、腕を組んで難しい顔をしている。
+
+
+#label classroom
+
+#ifeq progress 0 classroom0
+#ifeq progress 1 classroom1
+#ifeq progress 2 classroom2
+#ifeq progress 3 classroom3
+#ifeq progress 4 classroom4
+
+
+#label classroom0
+
+
+#choice
+
+見る
+話す
+移動
+
+#endchoice
+
+#ifeq choice 1 classroom0_look
+#ifeq choice 2 classroom0_talk
+#ifeq choice 3 classroom0_move
+
+#label classroom0_look
+#call common_look
+#jump classroom
+
+#label classroom0_talk
+
+[澪]
+来たね
+
+[健一]
+どうしたんだ？
+
+[澪]
+事件だよ
+
+[健一]
+事件？
+
+[澪]
+タルトが消えた
 
 []
-2026/06/17
+
+嫌な予感がした。
+
+[健一]
+またか
+
+[澪]
+またとは何よ
+
+[健一]
+いや、何でもない
+
+[澪]
+とにかく聞いて
+
+#setnum progress 1
+#jump classroom
+
+
+#label classroom0_move
+#call common_cannot_move
+#jump classroom
+
+
+;
+; #label classroom シーン1
+;
+#label classroom1
+
+#choice
+
+見る
+話す
+移動
+
+#endchoice
+
+#ifeq choice 1 classroom1_look
+#ifeq choice 2 classroom1_talk
+#ifeq choice 3 classroom1_move
+
+;見る
+#label classroom1_look
+#call common_look
+#jump classroom
+
+;話す
+#label classroom1_talk
+
+[]
+
+美緒は机を叩いた。
+
+[澪]
+今日のお昼。
+私は期間限定タルトを冷蔵庫に入れた。
+
+[澪]
+そして放課後。
+取りに行ったら無くなっていた。
+
+[澪]
+つまり――
+
+[健一]
+盗難事件か
+
+[澪]
+そういうこと
+
+[]
+
+僕はため息をついた。
+
+[健一]
+職員室には聞いたのか？
+
+[澪]
+聞いた
+
+[澪]
+知らないって
+
+[健一]
+ふむ
+
+[澪]
+それでね
+
+[]
+
+美緒がじっと僕を見る。
+
+[澪]
+最後に冷蔵庫の前にいたの、健一なんだよね
+
+[健一]
+えっ
+
+[澪]
+つまり第一容疑者
+
+[健一]
+待て待て待て
+
+[澪]
+違うなら証明して
+
+[健一]
+無茶言うな
+
+[澪]
+じゃあ犯人探し手伝って
+
+[]
+
+やっぱりそうなるのか。
+
+[健一]
+わかったよ
+
+[健一]
+この探偵、健一さんに任せたまえ
+
+[澪]
+自称だけどね
+
+[健一]
+ある名探偵はこう言った。「データを集める前に結論を出すな」
+
+[澪]
+今まさに結論出そうとしてたよね
+
+[健一]
+細かいことは気にするな
+
+
+#setnum progress 2
+#jump classroom
+
+
+;帰る
+#label classroom1_move
+#call common_cannot_move
+#jump classroom
+
+
+
+;
+; #label classroom シーン2
+;
+#label classroom2
+
+#choice
+
+見る
+話す
+移動
+
+#endchoice
+
+#ifeq choice 1 classroom2_look
+#ifeq choice 2 classroom2_talk
+#ifeq choice 3 classroom2_move
+
+
+;見る
+#label classroom2_look
+
+[]
+教室のドアが開いた。
+
+#leftwipe character01 normal
+
+[サンプル子]
+呼ばれたので来ました
+
+[健一]
+来たか、証人その一
+
+[サンプル子]
+証人なんですか？
+
+#setnum progress 3
+#jump classroom
+
+
+;話す
+#label classroom2_talk
+
+[澪]
+じゃあ犯人探し手伝ってね
+
+#jump classroom2
+
+
+;帰る
+#label classroom2_move
+#call common_cannot_move
+#jump classroom2
+
+
+
+;
+; #label classroom シーン3
+;
+#label classroom3
+
+#choice
+
+見る
+話す
+移動
+
+#endchoice
+
+#ifeq choice 1 classroom3_look
+#ifeq choice 2 classroom3_talk
+#ifeq choice 3 classroom3_move
+
+#label classroom3_look
+
+
+#choice
+
+澪
+サンプル子
+戻る
+
+#endchoice
+
+#ifeq choice 1 classroom3_look_misa
+#ifeq choice 2 classroom3_look_sanpuruko
+#ifeq choice 3 classroom3
+
+
+#label classroom3_look_misa
+#call common_look
+#jump classroom3
+
+
+#label classroom3_look_sanpuruko
+
+[]
+サンプル子は今の状況を今一つわかっていないようだ
+
+#jump classroom3
+
+
+#label classroom3_talk
+
+[澪]
+サンプル子、冷蔵庫見たよね？
+
+[サンプル子]
+はい
+
+[サンプル子]
+三時頃、お茶を取りに行った時に見ました
+
+[健一]
+その時タルトは？
+
+[サンプル子]
+ありました
+
+[]
+
+僕はうなずく。
+
+[健一]
+つまり犯行時刻は三時以降
+
+[澪]
+おお
+
+[健一]
+これは。。。
+迷宮入りだな。
+
+[サンプル子]
+迷宮入りですね。
+
+[澪]
+イヤイヤ
+
+
+
+#setnum progress 4
+#jump classroom3
+
+
+;帰る
+#label classroom3_move
+#call common_cannot_move
+#jump classroom3
+
+
+
+;
+; #label classroom シーン4
+;
+#label classroom4
+
+#choice
+
+見る
+話す
+移動
+
+#endchoice
+
+#ifeq choice 1 classroom4_look
+#ifeq choice 2 classroom4_talk
+#ifeq choice 3 classroom4_move
+
+
+
+
+
+; 共通関数
+;
+#label common_look
+
+[]
+美緒が不機嫌そうにこっちを見ている。
+
+#return
+
+#label common_cannot_move
+
+[澪]
+ちょっと、どこへいこうとしているの？
+
+[]
+どうやら帰れそうにない
+
+#return

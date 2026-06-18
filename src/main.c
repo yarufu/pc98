@@ -3,6 +3,7 @@
 #include "pmd.h"
 #include "mouse98.h"
 #include "text98.h"
+#include "title.h"
 
 
 #include <stdint.h>
@@ -70,7 +71,6 @@ typedef struct {
 #define SAVE_VERSION 2
 #define SAVE_SLOT_COUNT 3
 #define SAVE_MENU_ITEM_COUNT (SAVE_SLOT_COUNT + 1)
-#define TITLE_MENU_ITEM_COUNT 3
 #define SYSTEM_MENU_ITEM_COUNT 5
 #define MOUSE_CHOICE_MOTION_THRESHOLD 16
 #define CHOICE_RESULT_LOAD_RESUME 0
@@ -112,7 +112,6 @@ typedef struct {
 static GameFlag g_flags[MAX_FLAGS];
 static GameState g_state;
 static int g_pmd_available = 0;
-static int g_title_bgm_playing = 0;
 
 // マウス制御
 static int g_mouse_available = 0;
@@ -171,11 +170,6 @@ static const char g_load_menu_1[] = "\x83\x8D\x81\x5B\x83\x68\x82\x50";
 static const char g_load_menu_2[] = "\x83\x8D\x81\x5B\x83\x68\x82\x51";
 static const char g_load_menu_3[] = "\x83\x8D\x81\x5B\x83\x68\x82\x52";
 static const char g_menu_back[] = "\x96\xDF\x82\xE9";
-/* Shift_JIS: はじめから、ロード、終了 */
-static const char g_title_menu_start[] =
-    "\x82\xCD\x82\xB6\x82\xDF\x82\xA9\x82\xE7";
-static const char g_title_menu_load[] = "\x83\x8D\x81\x5B\x83\x68";
-static const char g_title_menu_exit[] = "\x8F\x49\x97\xB9";
 /* Shift_JIS: セーブ、ロード、タイトルへ戻る、ゲーム終了、キャンセル */
 static const char g_system_menu_save[] =
     "\x83\x5A\x81\x5B\x83\x75";
@@ -196,9 +190,6 @@ static const char *g_save_menu_items[SAVE_MENU_ITEM_COUNT] = {
 };
 static const char *g_load_menu_items[SAVE_MENU_ITEM_COUNT] = {
     g_load_menu_1, g_load_menu_2, g_load_menu_3, g_menu_back
-};
-static const char *g_title_menu_items[TITLE_MENU_ITEM_COUNT] = {
-    g_title_menu_start, g_title_menu_load, g_title_menu_exit
 };
 static const char *g_system_menu_items[SYSTEM_MENU_ITEM_COUNT] = {
     g_system_menu_save,
@@ -291,14 +282,11 @@ static int save_game_state(const char *filename);
 static int load_game_state(const char *filename);
 static void restore_palette_after_load(void);
 static void restore_scene_after_load(void);
+static void request_loaded_game_resume(void);
 static void ui_show_notice(const char *message);
 static void show_save_menu(void);
 static int show_load_menu(void);
 static enum SystemAction show_system_menu(void);
-static void ui_draw_title_screen(void);
-static void title_bgm_start(void);
-static void title_bgm_stop(void);
-static int show_title_menu(void);
 static void app_cleanup(void);
 static void extract_name_from_brackets(const char *line, char *out_name, int out_size);
 static void resume_script_line(FILE *fp, int *script_line,
@@ -1874,15 +1862,19 @@ static void restore_scene_after_load(void)
     resume_bgm_after_load();
 }
 
+static void request_loaded_game_resume(void)
+{
+    g_request_scene_redraw = 1;
+    g_request_script_resume = 1;
+}
+
 static int handle_load_hotkey(uint8_t ch)
 {
     (void)ch;
 
     if (show_load_menu()) {
         restore_scene_after_load();
-
-        g_request_scene_redraw = 1;
-        g_request_script_resume = 1;
+        request_loaded_game_resume();
         return 1;
     }
 
@@ -2784,96 +2776,11 @@ static enum SystemAction show_system_menu(void)
     return SYSTEM_ACTION_NONE;
 }
 
-static void ui_draw_title_screen(void)
-{
-    if (!graph98_load_palette_file("TITLE.PAL")) {
-        debug_log("TITLE.PAL load failed. Keeping current palette.");
-    }
-
-    graph98_clear(0);
-
-    if (!graph98_load_g98("TITLE.G98")) {
-        graph98_clear(0);
-        debug_log("TITLE.G98 load failed. Using black background.");
-    }
-
-    ui_draw_message_window();
-}
-
-static void title_bgm_start(void)
-{
-    FILE *fp;
-
-    if (!g_pmd_available || g_title_bgm_playing) {
-        return;
-    }
-
-    fp = fopen("TITLE.M", "rb");
-    if (fp == 0) {
-        return;
-    }
-    fclose(fp);
-
-    if (!pmd_load_music_file("TITLE.M")) {
-        debug_log("TITLE.M load failed.");
-        return;
-    }
-
-    pmd_start_music();
-    g_title_bgm_playing = 1;
-}
-
-static void title_bgm_stop(void)
-{
-    if (!g_pmd_available || !g_title_bgm_playing) {
-        return;
-    }
-
-    pmd_stop_music();
-    g_title_bgm_playing = 0;
-}
-
-static int show_title_menu(void)
-{
-    int selected;
-
-    ui_draw_title_screen();
-    title_bgm_start();
-
-    for (;;) {
-        selected = show_selection_menu(g_title_menu_items,
-                                       TITLE_MENU_ITEM_COUNT);
-
-        if (selected == 1) {
-            title_bgm_stop();
-            return 1;
-        }
-
-        if (selected == 2) {
-            if (show_load_menu()) {
-                title_bgm_stop();
-                restore_scene_after_load();
-                g_request_scene_redraw = 1;
-                g_request_script_resume = 1;
-                return 1;
-            }
-            ui_draw_title_screen();
-            title_bgm_start();
-            continue;
-        }
-
-        if (selected == 3) {
-            return 0;
-        }
-    }
-}
-
 static void app_cleanup(void)
 {
     if (g_pmd_available) {
         pmd_stop_music();
     }
-    g_title_bgm_playing = 0;
 
     graph98_clear(0);
     text98_clear_screen();
@@ -3124,6 +3031,7 @@ static void handle_choice_block(FILE *fp, int *script_line)
 int main(void)
 {
     enum GameResult game_result;
+    TitleContext title_context;
 
         remove("debug.txt");
         debug_log("ADV98 START");
@@ -3164,7 +3072,14 @@ int main(void)
     for (;;) {
         g_system_action = SYSTEM_ACTION_NONE;
 
-        if (!show_title_menu()) {
+        title_context.pmd_available = g_pmd_available;
+        title_context.show_selection_menu = show_selection_menu;
+        title_context.show_load_menu = show_load_menu;
+        title_context.restore_scene_after_load = restore_scene_after_load;
+        title_context.request_loaded_game_resume = request_loaded_game_resume;
+        title_context.draw_message_window = ui_draw_message_window;
+
+        if (!show_title_menu(&title_context)) {
             break;
         }
 

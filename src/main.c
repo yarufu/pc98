@@ -7,6 +7,7 @@
 #include "save.h"
 #include "script.h"
 #include "debug.h"
+#include "game_state.h"
 
 
 #include <stdint.h>

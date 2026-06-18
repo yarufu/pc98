@@ -1,7 +1,7 @@
 #ifndef SCRIPT_H
 #define SCRIPT_H
 
-#include "save.h"
+#include "game_state.h"
 
 #include <stdint.h>
 #include <stdio.h>

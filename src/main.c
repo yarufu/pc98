@@ -4,6 +4,7 @@
 #include "mouse98.h"
 #include "text98.h"
 #include "title.h"
+#include "save.h"
 
 
 #include <stdint.h>
@@ -26,50 +27,10 @@
 
 struct Message;
 
-enum StandId {
-    STAND_NONE = 0,
-    STAND_CHARACTER01,
-    STAND_CHARACTER02,
-    STAND_CHARACTER03,
-    STAND_CHARACTER04,
-    STAND_CHARACTER05,
-    STAND_CHARACTER06,
-    STAND_CHARACTER07,
-    STAND_CHARACTER08,
-    STAND_CHARACTER09,
-    STAND_CHARACTER10,
-    STAND_CHARACTER11,
-    STAND_CHARACTER12,
-    STAND_CHARACTER13,
-    STAND_CHARACTER14,
-    STAND_CHARACTER15,
-    STAND_CHARACTER16,
-    STAND_CHARACTER17,
-    STAND_CHARACTER18,
-    STAND_CHARACTER19,
-    STAND_CHARACTER20
-};
-
-enum FaceId {
-    FACE_NORMAL = 0,
-    FACE_HAPPY,
-    FACE_ANGRY,
-    FACE_SURPRISED
-};
-
-typedef struct {
-    char name[32];
-    int value;
-} GameFlag;
-
-#define MAX_FLAGS 16
 #define MAX_CHOICE_ITEMS 6
 #define MAX_CHOICE_CHARS 64
 #define MAX_CHOICE_DRAW_CHARS 8
 #define CHOICE_COLUMNS 2
-#define CALL_STACK_MAX 8
-#define SAVE_VERSION 2
-#define SAVE_SLOT_COUNT 3
 #define SAVE_MENU_ITEM_COUNT (SAVE_SLOT_COUNT + 1)
 #define SYSTEM_MENU_ITEM_COUNT 5
 #define MOUSE_CHOICE_MOTION_THRESHOLD 16
@@ -86,28 +47,6 @@ enum GameResult {
     GAME_RESULT_RETURN_TO_TITLE,
     GAME_RESULT_EXIT_TO_DOS
 };
-
-typedef struct {
-    char bg_name[32];
-    int script_line;
-    int call_stack[CALL_STACK_MAX];
-    int call_stack_depth;
-
-    enum StandId left_stand;
-    enum FaceId left_face;
-
-    enum StandId right_stand;
-    enum FaceId right_face;
-
-    char bgm[64];
-} GameState;
-
-typedef struct {
-    char magic[8];
-    int version;
-    GameState state;
-    GameFlag flags[MAX_FLAGS];
-} SaveData;
 
 static GameFlag g_flags[MAX_FLAGS];
 static GameState g_state;
@@ -155,12 +94,6 @@ static int g_choice_work_lens[MAX_CHOICE_ITEMS];
 static char g_choice_work_line[256];
 static uint16_t g_choice_saved_jis[MAX_CHOICE_ITEMS][MAX_CHOICE_CHARS];
 static int g_choice_saved_lens[MAX_CHOICE_ITEMS];
-
-static const char *g_save_slot_files[SAVE_SLOT_COUNT] = {
-    "SAVE1.DAT",
-    "SAVE2.DAT",
-    "SAVE3.DAT"
-};
 
 /* Shift_JIS: セーブ１～３、ロード１～３、戻る */
 static const char g_save_menu_1[] = "\x83\x5A\x81\x5B\x83\x75\x82\x50";
@@ -278,8 +211,6 @@ static void set_flag_value(const char *name, int value);
 static int get_flag_value(const char *name);
 static void debug_log(const char *fmt, ...);
 static int read_script_line(FILE *fp, char *line, int line_size, int *script_line);
-static int save_game_state(const char *filename);
-static int load_game_state(const char *filename);
 static void restore_palette_after_load(void);
 static void restore_scene_after_load(void);
 static void request_loaded_game_resume(void);
@@ -1668,83 +1599,6 @@ static int read_script_line(FILE *fp, char *line, int line_size, int *script_lin
     return 1;
 }
 
-static int save_game_state(const char *filename)
-{
-    FILE *fp;
-    SaveData save_data;
-
-    memset(&save_data, 0, sizeof(save_data));
-    memcpy(save_data.magic, "ADV98SAV", 8);
-    save_data.version = SAVE_VERSION;
-    save_data.state = g_state;
-    memcpy(save_data.flags, g_flags, sizeof(g_flags));
-
-    fp = fopen(filename, "wb");
-    if (fp == 0) {
-        debug_log("SAVE FAILED open file=%s", filename);
-        return 0;
-    }
-
-    if (fwrite(&save_data, sizeof(save_data), 1, fp) != 1) {
-        debug_log("SAVE FAILED write file=%s", filename);
-        fclose(fp);
-        return 0;
-    }
-
-    fclose(fp);
-
-    debug_log("SAVE OK file=%s version=%d line=%d",
-              filename,
-              save_data.version,
-              save_data.state.script_line);
-
-    return 1;
-}
-
-static int load_game_state(const char *filename)
-{
-    FILE *fp;
-    SaveData save_data;
-
-    memset(&save_data, 0, sizeof(save_data));
-
-    fp = fopen(filename, "rb");
-    if (fp == 0) {
-        debug_log("LOAD FAILED open file=%s", filename);
-        return 0;
-    }
-
-    if (fread(&save_data, sizeof(save_data), 1, fp) != 1) {
-        debug_log("LOAD FAILED read file=%s", filename);
-        fclose(fp);
-        return 0;
-    }
-
-    fclose(fp);
-
-    if (memcmp(save_data.magic, "ADV98SAV", 8) != 0) {
-        debug_log("LOAD FAILED bad magic");
-        return 0;
-    }
-
-    if (save_data.version != SAVE_VERSION) {
-        debug_log("LOAD FAILED bad version=%d expected=%d",
-                  save_data.version,
-                  SAVE_VERSION);
-        return 0;
-    }
-
-    g_state = save_data.state;
-    memcpy(g_flags, save_data.flags, sizeof(g_flags));
-
-    debug_log("LOAD OK file=%s version=%d line=%d",
-              filename,
-              save_data.version,
-              save_data.state.script_line);
-
-    return 1;
-}
-
 static void restore_palette_after_load(void)
 {
     FILE *fp;
@@ -2725,10 +2579,12 @@ static int show_selection_menu(const char *const *items, int item_count)
 static void show_save_menu(void)
 {
     int selected;
+    const char *filename;
 
     selected = show_selection_menu(g_save_menu_items, SAVE_MENU_ITEM_COUNT);
     if (selected >= 1 && selected <= SAVE_SLOT_COUNT) {
-        if (save_game_state(g_save_slot_files[selected - 1])) {
+        filename = save_get_slot_file(selected - 1);
+        if (save_game_state(filename, &g_state, g_flags)) {
             ui_show_notice(g_notice_saved);
         }
     }
@@ -2737,10 +2593,12 @@ static void show_save_menu(void)
 static int show_load_menu(void)
 {
     int selected;
+    const char *filename;
 
     selected = show_selection_menu(g_load_menu_items, SAVE_MENU_ITEM_COUNT);
     if (selected >= 1 && selected <= SAVE_SLOT_COUNT) {
-        return load_game_state(g_save_slot_files[selected - 1]);
+        filename = save_get_slot_file(selected - 1);
+        return load_game_state(filename, &g_state, g_flags);
     }
 
     return 0;

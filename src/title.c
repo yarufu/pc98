@@ -1,9 +1,9 @@
 #include "title.h"
 
+#include "debug.h"
 #include "graph98.h"
 #include "pmd.h"
 
-#include <stdarg.h>
 #include <stdio.h>
 
 #define TITLE_MENU_ITEM_COUNT 3
@@ -20,35 +20,17 @@ static const char *g_title_menu_items[TITLE_MENU_ITEM_COUNT] = {
 
 static int g_title_bgm_playing = 0;
 
-static void title_debug_log(const char *fmt, ...)
-{
-    FILE *fp;
-    va_list args;
-
-    fp = fopen("debug.txt", "a");
-    if (fp == 0) {
-        return;
-    }
-
-    va_start(args, fmt);
-    vfprintf(fp, fmt, args);
-    fprintf(fp, "\n");
-    va_end(args);
-
-    fclose(fp);
-}
-
 static void ui_draw_title_screen(const TitleContext *ctx)
 {
     if (!graph98_load_palette_file("TITLE.PAL")) {
-        title_debug_log("TITLE.PAL load failed. Keeping current palette.");
+        debug_log("TITLE.PAL load failed. Keeping current palette.");
     }
 
     graph98_clear(0);
 
     if (!graph98_load_g98("TITLE.G98")) {
         graph98_clear(0);
-        title_debug_log("TITLE.G98 load failed. Using black background.");
+        debug_log("TITLE.G98 load failed. Using black background.");
     }
 
     if (ctx->draw_message_window != 0) {
@@ -71,7 +53,7 @@ static void title_bgm_start(const TitleContext *ctx)
     fclose(fp);
 
     if (!pmd_load_music_file("TITLE.M")) {
-        title_debug_log("TITLE.M load failed.");
+        debug_log("TITLE.M load failed.");
         return;
     }
 

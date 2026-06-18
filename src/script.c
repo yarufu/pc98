@@ -1,5 +1,6 @@
 #include "script.h"
 
+#include "debug.h"
 #include "graph98.h"
 #include "pmd.h"
 #include "text98.h"
@@ -104,9 +105,9 @@ static int find_label_and_jump(const ScriptContext *ctx,
         count = sscanf(line, "%31s %63s", cmd, arg1);
         if (count >= 2) {
             if (strcmp(cmd, "#label") == 0 && strcmp(arg1, label_name) == 0) {
-                ctx->debug_log("SCRIPT JUMP LABEL line=%d label=%s",
-                               script_line != 0 ? *script_line : 0,
-                               label_name);
+                debug_log("SCRIPT JUMP LABEL line=%d label=%s",
+                          script_line != 0 ? *script_line : 0,
+                          label_name);
                 /*
                  * ここで見つかった時点で、
                  * fp は #label 行の次の行を指している。
@@ -348,7 +349,7 @@ static void resume_script_line(const ScriptContext *ctx,
         }
     }
 
-    ctx->debug_log("LOAD RESUME line=%d", target_line);
+    debug_log("LOAD RESUME line=%d", target_line);
 }
 
 static void handle_choice_block(const ScriptContext *ctx, FILE *fp, int *script_line)
@@ -597,7 +598,7 @@ enum GameResult run_script_sjis(const ScriptContext *ctx)
 
     fp = fopen("script.txt", "rb");
     if (fp == 0) {
-        ctx->debug_log("script.txt not found.");
+        debug_log("script.txt not found.");
         return GAME_RESULT_EXIT_TO_DOS;
     }
 
@@ -671,13 +672,13 @@ enum GameResult run_script_sjis(const ScriptContext *ctx)
 
                     if (state->call_stack_depth < 0 ||
                         state->call_stack_depth > CALL_STACK_MAX) {
-                        ctx->debug_log("SCRIPT CALL invalid stack depth=%d; reset",
-                                       state->call_stack_depth);
+                        debug_log("SCRIPT CALL invalid stack depth=%d; reset",
+                                  state->call_stack_depth);
                         state->call_stack_depth = 0;
                     }
 
                     if (state->call_stack_depth >= CALL_STACK_MAX) {
-                        ctx->debug_log("SCRIPT CALL stack full label=%s", arg1);
+                        debug_log("SCRIPT CALL stack full label=%s", arg1);
                         continue;
                     }
 
@@ -687,9 +688,9 @@ enum GameResult run_script_sjis(const ScriptContext *ctx)
                     if (find_label_and_jump(ctx, fp, &script_line, arg1)) {
                         state->call_stack[state->call_stack_depth] = return_line;
                         state->call_stack_depth++;
-                        ctx->debug_log("SCRIPT CALL label=%s return_line=%d depth=%d",
-                                       arg1, return_line,
-                                       state->call_stack_depth);
+                        debug_log("SCRIPT CALL label=%s return_line=%d depth=%d",
+                                  arg1, return_line,
+                                  state->call_stack_depth);
                     } else {
                         if (return_file_pos >= 0) {
                             fseek(fp, return_file_pos, SEEK_SET);
@@ -698,10 +699,10 @@ enum GameResult run_script_sjis(const ScriptContext *ctx)
                         }
                         script_line = return_line;
                         state->script_line = script_line;
-                        ctx->debug_log("SCRIPT CALL label not found: %s", arg1);
+                        debug_log("SCRIPT CALL label not found: %s", arg1);
                     }
                 } else {
-                    ctx->debug_log("SCRIPT CALL missing label");
+                    debug_log("SCRIPT CALL missing label");
                 }
                 continue;
             }
@@ -711,8 +712,8 @@ enum GameResult run_script_sjis(const ScriptContext *ctx)
 
                 if (state->call_stack_depth <= 0 ||
                     state->call_stack_depth > CALL_STACK_MAX) {
-                    ctx->debug_log("SCRIPT RETURN without call depth=%d",
-                                   state->call_stack_depth);
+                    debug_log("SCRIPT RETURN without call depth=%d",
+                              state->call_stack_depth);
                     if (state->call_stack_depth < 0 ||
                         state->call_stack_depth > CALL_STACK_MAX) {
                         state->call_stack_depth = 0;
@@ -725,10 +726,10 @@ enum GameResult run_script_sjis(const ScriptContext *ctx)
                 if (seek_script_after_line(ctx, fp, &script_line, return_line)) {
                     state->call_stack_depth--;
                     state->script_line = script_line;
-                    ctx->debug_log("SCRIPT RETURN line=%d depth=%d",
-                                   return_line, state->call_stack_depth);
+                    debug_log("SCRIPT RETURN line=%d depth=%d",
+                              return_line, state->call_stack_depth);
                 } else {
-                    ctx->debug_log("SCRIPT RETURN invalid line=%d", return_line);
+                    debug_log("SCRIPT RETURN invalid line=%d", return_line);
                 }
                 continue;
             }
@@ -804,7 +805,7 @@ enum GameResult run_script_sjis(const ScriptContext *ctx)
                         // printf("[PAL] success\n");
                         scene_dirty = 1;
                     } else {
-                        ctx->debug_log("palette load failed: %s", arg1);
+                        debug_log("palette load failed: %s", arg1);
                         // printf("[PAL] FAILED\n");
                     }
                 } else {
@@ -848,7 +849,7 @@ enum GameResult run_script_sjis(const ScriptContext *ctx)
                         if (pmd_load_music_file(arg1)) {
                             pmd_start_music();
                         }else{
-                            ctx->debug_log("bgm load failed: %s", arg1);
+                            debug_log("bgm load failed: %s", arg1);
                         }
                     }
                 }

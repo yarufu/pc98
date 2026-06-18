@@ -6,13 +6,13 @@
 #include "title.h"
 #include "save.h"
 #include "script.h"
+#include "debug.h"
 
 
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
-#include <stdarg.h>
 
 // キャラの位置調整
 #define STAND_LEFT_X   60
@@ -176,7 +176,6 @@ static void ui_refresh_right_stand_only_wipe(const char *bg_name,
                                              enum StandId right_stand,
                                              enum FaceId right_face);
 
-static void debug_log(const char *fmt, ...);
 static void restore_palette_after_load(void);
 static void restore_scene_after_load(void);
 static void request_loaded_game_resume(void);
@@ -1301,28 +1300,6 @@ static void trim_leading_spaces(char *str)
     str[j] = '\0';
 }
 
-static void debug_log(const char *fmt, ...)
-{
-    FILE *fp;
-    va_list args;
-
-    fp = fopen("debug.txt", "a");
-
-    if (fp == 0) {
-        return;
-    }
-
-    va_start(args, fmt);
-
-    vfprintf(fp, fmt, args);
-
-    fprintf(fp, "\n");
-
-    va_end(args);
-
-    fclose(fp);
-}
-
 static void restore_palette_after_load(void)
 {
     FILE *fp;
@@ -1838,7 +1815,7 @@ int main(void)
     TitleContext title_context;
     ScriptContext script_context;
 
-        remove("debug.txt");
+        debug_log_init();
         debug_log("ADV98 START");
 
     // PMD常駐確認
@@ -1894,7 +1871,6 @@ int main(void)
         script_context.request_scene_redraw = &g_request_scene_redraw;
         script_context.request_script_resume = &g_request_script_resume;
         script_context.system_action = &g_system_action;
-        script_context.debug_log = debug_log;
         script_context.set_message_box = ui_set_message_box;
         script_context.draw_background = ui_draw_background;
         script_context.draw_background_center_wipe = ui_draw_background_center_wipe;

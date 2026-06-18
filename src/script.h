@@ -26,7 +26,6 @@ typedef struct {
     int *request_script_resume;
     enum SystemAction *system_action;
 
-    void (*debug_log)(const char *fmt, ...);
     void (*set_message_box)(int x0, int y0, int x1, int y1);
     void (*draw_background)(const char *bg_name);
     void (*draw_background_center_wipe)(const char *bg_name);

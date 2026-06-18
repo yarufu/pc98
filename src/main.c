@@ -5,6 +5,7 @@
 #include "text98.h"
 #include "title.h"
 #include "save.h"
+#include "script.h"
 
 
 #include <stdint.h>
@@ -35,18 +36,6 @@ struct Message;
 #define SYSTEM_MENU_ITEM_COUNT 5
 #define MOUSE_CHOICE_MOTION_THRESHOLD 16
 #define CHOICE_RESULT_LOAD_RESUME 0
-
-enum SystemAction {
-    SYSTEM_ACTION_NONE = 0,
-    SYSTEM_ACTION_TITLE,
-    SYSTEM_ACTION_EXIT
-};
-
-enum GameResult {
-    GAME_RESULT_SCRIPT_END = 0,
-    GAME_RESULT_RETURN_TO_TITLE,
-    GAME_RESULT_EXIT_TO_DOS
-};
 
 static GameFlag g_flags[MAX_FLAGS];
 static GameState g_state;
@@ -91,7 +80,6 @@ static int g_choice_band_y0[MAX_CHOICE_ITEMS] = {313, 313, 335, 335, 357, 357};
 static int g_choice_band_y1[MAX_CHOICE_ITEMS] = {332, 332, 354, 354, 376, 376};
 static uint16_t g_choice_work_jis[MAX_CHOICE_ITEMS][MAX_CHOICE_CHARS];
 static int g_choice_work_lens[MAX_CHOICE_ITEMS];
-static char g_choice_work_line[256];
 static uint16_t g_choice_saved_jis[MAX_CHOICE_ITEMS][MAX_CHOICE_CHARS];
 static int g_choice_saved_lens[MAX_CHOICE_ITEMS];
 
@@ -164,14 +152,6 @@ static int ui_draw_message_page_jis(const uint16_t *name, int name_len,
                                     int start_index);
 static void ui_draw_message_jis(const uint16_t *name, int name_len,
                                 const uint16_t *jis_codes, int count);
-static enum StandId parse_stand_id(const char *name);
-static enum FaceId parse_face_id(const char *name);
-static void process_command_line(const char *line,
-                                 char *bg_name,
-                                 enum StandId *left_stand,
-                                 enum FaceId *left_face,
-                                 enum StandId *right_stand,
-                                 enum FaceId *right_face);
 static void ui_draw_current_stands(enum StandId left_stand,
                                    enum FaceId left_face,
                                    enum StandId right_stand,
@@ -179,17 +159,9 @@ static void ui_draw_current_stands(enum StandId left_stand,
 static int show_selection_menu(const char *const *items, int item_count);
 static int input_wait_choice_jis(int choice_count, int allow_save_load)
     __attribute__((noinline,optimize("O0")));
-static void handle_choice_block(FILE *fp, int *script_line)
-    __attribute__((noinline,optimize("O0")));
+static void reset_choice_lines(void);
 static void store_choice_line(int index, const char *line) __attribute__((noinline));
-static int find_label_and_jump(FILE *fp, int *script_line,
-                               const char *label_name);
-static int seek_script_after_line(FILE *fp, int *script_line, int target_line);
 static void trim_leading_spaces(char *str);
-static int find_flag_index(const char *name);
-static void set_flag_on(const char *name);
-static void set_flag_off(const char *name);
-static int is_flag_on(const char *name);
 static void ui_restore_stand_background_rect(int x0, int y0, int x1, int y1, const char *bg_name);
 static void ui_refresh_left_stand_only(const char *bg_name,
                                        enum StandId left_stand,
@@ -204,13 +176,7 @@ static void ui_refresh_right_stand_only_wipe(const char *bg_name,
                                              enum StandId right_stand,
                                              enum FaceId right_face);
 
-static GameFlag *find_flag(const char *name);
-static GameFlag *find_or_create_flag(const char *name);
-static void add_flag_value(const char *name, int value);
-static void set_flag_value(const char *name, int value);
-static int get_flag_value(const char *name);
 static void debug_log(const char *fmt, ...);
-static int read_script_line(FILE *fp, char *line, int line_size, int *script_line);
 static void restore_palette_after_load(void);
 static void restore_scene_after_load(void);
 static void request_loaded_game_resume(void);
@@ -219,9 +185,6 @@ static void show_save_menu(void);
 static int show_load_menu(void);
 static enum SystemAction show_system_menu(void);
 static void app_cleanup(void);
-static void extract_name_from_brackets(const char *line, char *out_name, int out_size);
-static void resume_script_line(FILE *fp, int *script_line,
-                               char *current_name, int current_name_size);
 static void handle_save_hotkey(uint8_t ch);
 static int handle_load_hotkey(uint8_t ch);
 
@@ -1338,231 +1301,6 @@ static void trim_leading_spaces(char *str)
     str[j] = '\0';
 }
 
-// ラベルを探してそこへ飛ぶ関数
-static int find_label_and_jump(FILE *fp, int *script_line, const char *label_name)
-{
-    char line[256];
-    char cmd[32];
-    char arg1[64];
-    int count;
-
-    if (fp == 0 || label_name == 0 || label_name[0] == '\0') {
-        return 0;
-    }
-
-    /* いったん先頭へ戻ってラベルを探す */
-    fseek(fp, 0L, SEEK_SET);
-    if (script_line != 0) {
-        *script_line = 0;
-    }
-
-    while (read_script_line(fp, line, sizeof(line), script_line)) {
-        remove_newline(line);
-        trim_leading_spaces(line);
-        
-        /* 空行・コメント行スキップ */
-        if (line[0] == '\0' || line[0] == ';') {
-            continue;
-        }
-
-        if (line[0] != '#') {
-            continue;
-        }
-
-        cmd[0] = '\0';
-        arg1[0] = '\0';
-
-        count = sscanf(line, "%31s %63s", cmd, arg1);
-        if (count >= 2) {
-            if (strcmp(cmd, "#label") == 0 && strcmp(arg1, label_name) == 0) {
-                debug_log("SCRIPT JUMP LABEL line=%d label=%s",
-                          script_line != 0 ? *script_line : 0,
-                          label_name);
-                /*
-                 * ここで見つかった時点で、
-                 * fp は #label 行の次の行を指している。
-                 * そのまま戻れば、次の fgets() から本編再開できる。
-                 */
-                return 1;
-            }
-        }
-    }
-
-    return 0;
-}
-
-/* target_line を読み終えた状態にし、次の read_script_line() から再開する。 */
-static int seek_script_after_line(FILE *fp, int *script_line, int target_line)
-{
-    char line[256];
-
-    if (fp == 0 || script_line == 0 || target_line < 0) {
-        return 0;
-    }
-
-    fseek(fp, 0L, SEEK_SET);
-    *script_line = 0;
-
-    while (*script_line < target_line) {
-        if (!read_script_line(fp, line, sizeof(line), script_line)) {
-            return 0;
-        }
-    }
-
-    return 1;
-}
-
-// フラグ関数
-static int find_flag_index(const char *name)
-{
-    int i;
-
-    if (name == 0 || name[0] == '\0') {
-        return -1;
-    }
-
-    for (i = 0; i < MAX_FLAGS; ++i) {
-        if (g_flags[i].name[0] == '\0') {
-            continue;
-        }
-
-        if (strcmp(g_flags[i].name, name) == 0) {
-            return i;
-        }
-    }
-
-    return -1;
-}
-
-static void set_flag_on(const char *name)
-{
-    int i;
-    int idx;
-
-    if (name == 0 || name[0] == '\0') {
-        return;
-    }
-
-    idx = find_flag_index(name);
-    if (idx >= 0) {
-        g_flags[idx].value = 1;
-        return;
-    }
-
-    for (i = 0; i < MAX_FLAGS; ++i) {
-        if (g_flags[i].name[0] == '\0') {
-            strcpy(g_flags[i].name, name);
-            g_flags[i].value = 1;
-            return;
-        }
-    }
-}
-
-static void set_flag_off(const char *name)
-{
-    int idx;
-
-    if (name == 0 || name[0] == '\0') {
-        return;
-    }
-
-    idx = find_flag_index(name);
-    if (idx >= 0) {
-        g_flags[idx].value = 0;
-    }
-}
-
-static int is_flag_on(const char *name)
-{
-    int idx;
-
-    idx = find_flag_index(name);
-    if (idx >= 0) {
-        return g_flags[idx].value;
-    }
-
-    return 0;
-}
-
-static GameFlag *find_flag(const char *name)
-{
-    int i;
-
-    for (i = 0; i < MAX_FLAGS; ++i) {
-
-        if (g_flags[i].name[0] == '\0') {
-            continue;
-        }
-
-        if (strcmp(g_flags[i].name, name) == 0) {
-            return &g_flags[i];
-        }
-    }
-
-    return 0;
-}
-
-static GameFlag *find_or_create_flag(const char *name)
-{
-    int i;
-    GameFlag *flag;
-
-    flag = find_flag(name);
-
-    if (flag != 0) {
-        return flag;
-    }
-
-    for (i = 0; i < MAX_FLAGS; ++i) {
-
-        if (g_flags[i].name[0] == '\0') {
-
-            strcpy(g_flags[i].name, name);
-            g_flags[i].value = 0;
-
-            return &g_flags[i];
-        }
-    }
-
-    return 0;
-}
-
-static void add_flag_value(const char *name, int value)
-{
-    GameFlag *flag;
-
-    flag = find_or_create_flag(name);
-
-    if (flag != 0) {
-        flag->value += value;
-    }
-}
-
-static void set_flag_value(const char *name, int value)
-{
-    GameFlag *flag;
-
-    flag = find_or_create_flag(name);
-
-    if (flag != 0) {
-        flag->value = value;
-    }
-}
-
-static int get_flag_value(const char *name)
-{
-    GameFlag *flag;
-
-    flag = find_flag(name);
-
-    if (flag == 0) {
-        return 0;
-    }
-
-    return flag->value;
-}
-
-
 static void debug_log(const char *fmt, ...)
 {
     FILE *fp;
@@ -1583,20 +1321,6 @@ static void debug_log(const char *fmt, ...)
     va_end(args);
 
     fclose(fp);
-}
-
-static int read_script_line(FILE *fp, char *line, int line_size, int *script_line)
-{
-    if (fgets(line, line_size, fp) == 0) {
-        return 0;
-    }
-
-    if (script_line != 0) {
-        (*script_line)++;
-        g_state.script_line = *script_line;
-    }
-
-    return 1;
 }
 
 static void restore_palette_after_load(void)
@@ -1644,43 +1368,6 @@ static void restore_palette_after_load(void)
 
         graph98_apply_adv_palette();
     }
-}
-
-static void resume_script_line(FILE *fp, int *script_line,
-                               char *current_name, int current_name_size)
-{
-    char line[256];
-    int target_line;
-
-    if (fp == 0 || script_line == 0 || current_name == 0 || current_name_size <= 0) {
-        return;
-    }
-
-    target_line = g_state.script_line;
-
-    fseek(fp, 0L, SEEK_SET);
-    *script_line = 0;
-    current_name[0] = '\0';
-
-    while (*script_line < target_line - 1) {
-        if (!read_script_line(fp, line, sizeof(line), script_line)) {
-            break;
-        }
-
-        remove_newline(line);
-        trim_leading_spaces(line);
-
-        /* 空行・コメント行スキップ */
-        if (line[0] == '\0' || line[0] == ';') {
-            continue;
-        }
-
-        if (line[0] == '[') {
-            extract_name_from_brackets(line, current_name, current_name_size);
-        }
-    }
-
-    debug_log("LOAD RESUME line=%d", target_line);
 }
 
 static void handle_save_hotkey(uint8_t ch)
@@ -1798,569 +1485,6 @@ static void ui_show_notice(const char *message)
     ui_redraw_current_scene_from_state();
 }
 
-// [名前] から名前部分だけ取り出す
-static void extract_name_from_brackets(const char *line, char *out_name, int out_size)
-{
-    int i;
-    int j;
-
-    j = 0;
-
-    for (i = 1; line[i] != '\0' && line[i] != ']'; ++i) {
-        if (j < out_size - 1) {
-            out_name[j++] = line[i];
-        }
-    }
-
-    out_name[j] = '\0';
-}
-
-// 日本語 script.txt を再生する関数
-static enum GameResult run_script_sjis(void)
-{
-    FILE *fp;
-    char line[256];
-    char current_name[128];
-    int script_line;
-
-    uint16_t name_jis[64];
-    uint16_t text_jis[128];
-
-    int name_len;
-    int text_len;
-
-    char last_bg_name[32];
-    enum StandId last_left_stand;
-    enum StandId last_right_stand;
-    enum FaceId last_left_face;
-    enum FaceId last_right_face;
-    int scene_dirty;
-
-    int stand_dirty;
-    int bg_wipe_pending;
-    int left_wipe_pending;
-    int right_wipe_pending;
-    
-    
-    stand_dirty = 0;
-    bg_wipe_pending = 0;
-    left_wipe_pending = 0;
-    right_wipe_pending = 0;
-    script_line = 0;
-
-    current_name[0] = '\0';
-
-    if (!g_request_script_resume) {
-        memset(g_flags, 0, sizeof(g_flags));
-        memset(&g_state, 0, sizeof(g_state));
-        g_state.left_stand = STAND_NONE;
-        g_state.right_stand = STAND_NONE;
-        g_state.left_face = FACE_NORMAL;
-        g_state.right_face = FACE_NORMAL;
-    }
-
-    last_bg_name[0] = '\0';
-    last_left_stand = STAND_NONE;
-    last_right_stand = STAND_NONE;
-    last_left_face = FACE_NORMAL;
-    last_right_face = FACE_NORMAL;
-    scene_dirty = 1;
-
-    fp = fopen("script.txt", "rb");
-    if (fp == 0) {
-        debug_log("script.txt not found.");
-        return GAME_RESULT_EXIT_TO_DOS;
-    }
-
-    for (;;) {
-        if (g_request_script_resume) {
-            resume_script_line(fp, &script_line,
-                               current_name, sizeof(current_name));
-            scene_dirty = 1;
-            stand_dirty = 0;
-            bg_wipe_pending = 0;
-            left_wipe_pending = 0;
-            right_wipe_pending = 0;
-            g_request_scene_redraw = 0;
-            g_request_script_resume = 0;
-        }
-
-        if (!read_script_line(fp, line, sizeof(line), &script_line)) {
-            break;
-        }
-
-        g_state.script_line = script_line;
-        remove_newline(line);
-        trim_leading_spaces(line);
-        /* 空行・コメント行スキップ */
-        if (line[0] == '\0' || line[0] == ';') {
-            continue;
-        }
-
-        if (line[0] == '#') {
-            char cmd[32];
-            char arg1[64];
-            char arg2[64];
-            char arg3[64];
-            int count;
-
-            cmd[0] = '\0';
-            arg1[0] = '\0';
-            arg2[0] = '\0';
-            arg3[0] = '\0';
-
-            count = sscanf(line, "%31s %63s %63s %63s",
-                           cmd, arg1, arg2, arg3);
-
-            if (strcmp(cmd, "#choice") == 0) {
-                handle_choice_block(fp, &script_line);
-                if (g_system_action != SYSTEM_ACTION_NONE) {
-                    break;
-                }
-                continue;
-            }
-
-            if (strcmp(cmd, "#endchoice") == 0) {
-                continue;
-            }
-
-            if (strcmp(cmd, "#label") == 0) {
-                continue;
-            }
-
-            if (strcmp(cmd, "#jump") == 0) {
-                if (count >= 2) {
-                    find_label_and_jump(fp, &script_line, arg1);
-                }
-                continue;
-            }
-
-            if (strcmp(cmd, "#call") == 0) {
-                if (count >= 2) {
-                    long return_file_pos;
-                    int return_line;
-
-                    if (g_state.call_stack_depth < 0 ||
-                        g_state.call_stack_depth > CALL_STACK_MAX) {
-                        debug_log("SCRIPT CALL invalid stack depth=%d; reset",
-                                  g_state.call_stack_depth);
-                        g_state.call_stack_depth = 0;
-                    }
-
-                    if (g_state.call_stack_depth >= CALL_STACK_MAX) {
-                        debug_log("SCRIPT CALL stack full label=%s", arg1);
-                        continue;
-                    }
-
-                    return_file_pos = ftell(fp);
-                    return_line = script_line;
-
-                    if (find_label_and_jump(fp, &script_line, arg1)) {
-                        g_state.call_stack[g_state.call_stack_depth] = return_line;
-                        g_state.call_stack_depth++;
-                        debug_log("SCRIPT CALL label=%s return_line=%d depth=%d",
-                                  arg1, return_line,
-                                  g_state.call_stack_depth);
-                    } else {
-                        if (return_file_pos >= 0) {
-                            fseek(fp, return_file_pos, SEEK_SET);
-                        } else {
-                            seek_script_after_line(fp, &script_line, return_line);
-                        }
-                        script_line = return_line;
-                        g_state.script_line = script_line;
-                        debug_log("SCRIPT CALL label not found: %s", arg1);
-                    }
-                } else {
-                    debug_log("SCRIPT CALL missing label");
-                }
-                continue;
-            }
-
-            if (strcmp(cmd, "#return") == 0) {
-                int return_line;
-
-                if (g_state.call_stack_depth <= 0 ||
-                    g_state.call_stack_depth > CALL_STACK_MAX) {
-                    debug_log("SCRIPT RETURN without call depth=%d",
-                              g_state.call_stack_depth);
-                    if (g_state.call_stack_depth < 0 ||
-                        g_state.call_stack_depth > CALL_STACK_MAX) {
-                        g_state.call_stack_depth = 0;
-                    }
-                    continue;
-                }
-
-                return_line =
-                    g_state.call_stack[g_state.call_stack_depth - 1];
-                if (seek_script_after_line(fp, &script_line, return_line)) {
-                    g_state.call_stack_depth--;
-                    g_state.script_line = script_line;
-                    debug_log("SCRIPT RETURN line=%d depth=%d",
-                              return_line, g_state.call_stack_depth);
-                } else {
-                    debug_log("SCRIPT RETURN invalid line=%d", return_line);
-                }
-                continue;
-            }
-
-            if (strcmp(cmd, "#set") == 0) {
-                if (count >= 2) {
-                    set_flag_on(arg1);
-                }
-                continue;
-            }
-
-            if (strcmp(cmd, "#reset") == 0) {
-                if (count >= 2) {
-                    set_flag_off(arg1);
-                }
-                continue;
-            }
-
-            if (strcmp(cmd, "#if") == 0) {
-                if (count >= 3) {
-                    if (is_flag_on(arg1)) {
-                        find_label_and_jump(fp, &script_line, arg2);
-                    }
-                }
-                continue;
-            }
-
-            if (strcmp(cmd, "#ifnot") == 0) {
-                if (count >= 3) {
-                    if (!is_flag_on(arg1)) {
-                        find_label_and_jump(fp, &script_line, arg2);
-                    }
-                }
-                continue;
-            }
-
-            if (strcmp(cmd,"#add") == 0) {
-                if (count >= 3) {
-                    add_flag_value(arg1, atoi(arg2));
-                }
-                continue;
-            }
-
-            if (strcmp(cmd, "#setnum") == 0) {
-                if (count >= 3) {
-                    set_flag_value(arg1, atoi(arg2));
-                }
-                continue;
-            }
-
-            if (strcmp(cmd, "#ifge") == 0) {
-                if (count >= 4) {
-                    if (get_flag_value(arg1) >= atoi(arg2)) {
-                        find_label_and_jump(fp, &script_line, arg3);
-                    }
-                }
-                continue;
-            }
-
-            if (strcmp(cmd, "#ifeq") == 0) {
-                if (count >= 4) {
-                    if (get_flag_value(arg1) == atoi(arg2)) {
-                        find_label_and_jump(fp, &script_line, arg3);
-                    }
-                }
-                continue;
-            }
-     
-            if (strcmp(cmd, "#pal") == 0) {
-                if (count >= 2) {
-                    // printf("[PAL] load: %s\n", arg1);
-                    if (graph98_load_palette_file(arg1)) {
-                        // printf("[PAL] success\n");
-                        scene_dirty = 1;
-                    } else {
-                        debug_log("palette load failed: %s", arg1);
-                        // printf("[PAL] FAILED\n");
-                    }
-                } else {
-                    // printf("[PAL] invalid args\n");
-                }
-                continue;
-            }
-
-            // #seはコメントアウト
-            // BGM/SEはPMD(#bgm)に任せるため
-            /*
-            if (strcmp(cmd, "#se") == 0) {
-                if (count >= 2) {
-                    if (strcmp(arg1, "beep") == 0) {
-                        se86_play_beep();
-                    } else if (strcmp(arg1, "beep2") == 0) {
-                        se86_play_beep2();
-                    }
-                }
-                continue;
-            }
-            */
-            // 未知コマンド扱いで下に流れる可能性があるので、一応#seを無視する処理は入れておく
-            if (strcmp(cmd, "#se") == 0) {
-                continue;
-            }
-
-            if (strcmp(cmd, "#bgm") == 0) {
-                if (count >= 2) {
-
-                    if (strcmp(g_state.bgm, arg1) == 0) {
-                        continue;
-                    }
-
-                    strcpy(g_state.bgm, arg1);
-
-                    if (g_pmd_available) {
-
-                        pmd_stop_music();
-
-                        if (pmd_load_music_file(arg1)) {
-                            pmd_start_music();
-                        }else{
-                            debug_log("bgm load failed: %s", arg1);
-                        }
-                    }
-                }
-                continue;
-            }
-
-            if (strcmp(cmd, "#bgmstart") == 0) {
-                if (g_pmd_available) {
-                    pmd_start_music();
-                }
-                continue;
-            }
-
-            if (strcmp(cmd, "#bgmstop") == 0) {
-                if (g_pmd_available) {
-                    pmd_stop_music();
-                }
-                continue;
-            }
-
-            if (strcmp(cmd, "#bgmfade") == 0) {
-                if (g_pmd_available) {
-                    pmd_fadeout_music();
-                }
-                continue;
-            }
-
-            {
-                char old_bg_name[32];
-                enum StandId old_left_stand;
-                enum FaceId old_left_face;
-                enum StandId old_right_stand;
-                enum FaceId old_right_face;
-
-                strncpy(old_bg_name, g_state.bg_name, sizeof(old_bg_name) - 1);
-                old_bg_name[sizeof(old_bg_name) - 1] = '\0';
-                old_left_stand = g_state.left_stand;
-                old_left_face = g_state.left_face;
-                old_right_stand = g_state.right_stand;
-                old_right_face = g_state.right_face;
-
-                if (count >= 2) {
-                    if (strcmp(cmd, "#bgwipe") == 0) {
-                        bg_wipe_pending = 1;
-                    } else if (strcmp(cmd, "#bg") == 0) {
-                        bg_wipe_pending = 0;
-                    } else if (strcmp(cmd, "#leftwipe") == 0) {
-                        left_wipe_pending = 1;
-                    } else if (strcmp(cmd, "#left") == 0) {
-                        left_wipe_pending = 0;
-                    } else if (strcmp(cmd, "#rightwipe") == 0) {
-                        right_wipe_pending = 1;
-                    } else if (strcmp(cmd, "#right") == 0) {
-                        right_wipe_pending = 0;
-                    }
-                }
-
-                process_command_line(line,
-                                     g_state.bg_name,
-                                     &g_state.left_stand,
-                                     &g_state.left_face,
-                                     &g_state.right_stand,
-                                     &g_state.right_face);
-
-                if (bg_wipe_pending || strcmp(g_state.bg_name, old_bg_name) != 0) {
-                    scene_dirty = 1;
-                    stand_dirty = 0;
-                } else if (g_state.left_stand != old_left_stand ||
-                           g_state.left_face != old_left_face ||
-                           g_state.right_stand != old_right_stand ||
-                           g_state.right_face != old_right_face ||
-                           left_wipe_pending ||
-                           right_wipe_pending) {
-                    stand_dirty = 1;
-                }
-            }
-            continue;
-        }
-
-        if (line[0] == '[') {
-            extract_name_from_brackets(line, current_name, sizeof(current_name));
-            continue;
-        }
-
-        name_len = convert_message_text_sjis_to_jis_array(
-            (const unsigned char *)current_name,
-            name_jis,
-            64
-        );
-
-        text_len = convert_message_text_sjis_to_jis_array(
-            (const unsigned char *)line,
-            text_jis,
-            128
-        );
-
-        /* script.txt 末尾の空行で空メッセージが出るのを防ぐ */
-        if (text_len <= 0) {
-            continue;
-        }
-        
-        // 変化があれば部分的に再描画
-        if (scene_dirty || strcmp(last_bg_name, g_state.bg_name) != 0) {
-
-            if (bg_wipe_pending) {
-                ui_draw_background_center_wipe(g_state.bg_name);
-            } else {
-                ui_draw_background(g_state.bg_name);
-            }
-            if (left_wipe_pending) {
-                ui_draw_stand_center_wipe(g_state.left_stand, g_state.left_face,
-                                          STAND_LEFT_X, STAND_Y, 0);
-            } else {
-                ui_draw_stand(g_state.left_stand, g_state.left_face,
-                              STAND_LEFT_X, STAND_Y, 0);
-            }
-            if (right_wipe_pending) {
-                ui_draw_stand_center_wipe(g_state.right_stand, g_state.right_face,
-                                          STAND_RIGHT_X, STAND_Y, 1);
-            } else {
-                ui_draw_stand(g_state.right_stand, g_state.right_face,
-                              STAND_RIGHT_X, STAND_Y, 1);
-            }
-
-            strncpy(last_bg_name, g_state.bg_name, sizeof(last_bg_name) - 1);
-            last_bg_name[sizeof(last_bg_name) - 1] = '\0';
-            last_left_stand = g_state.left_stand;
-            last_left_face = g_state.left_face;
-            last_right_stand = g_state.right_stand;
-            last_right_face = g_state.right_face;
-
-            scene_dirty = 0;
-            stand_dirty = 0;
-            bg_wipe_pending = 0;
-            left_wipe_pending = 0;
-            right_wipe_pending = 0;
-
-        } else if (stand_dirty) {
-
-            /*
-             * 左もしくは右立ち絵だけ部分更新する。
-             * どっちの条件に引っかからなかった場合は、安全のため全体再描画に戻す。
-             */
-            if ((g_state.left_stand != last_left_stand ||
-                g_state.left_face != last_left_face) &&
-                g_state.right_stand == last_right_stand &&
-                g_state.right_face == last_right_face) {
-
-                // debug_log("LEFT STAND PARTIAL UPDATE");
-
-                if (left_wipe_pending) {
-                    ui_refresh_left_stand_only_wipe(g_state.bg_name,
-                                                    g_state.left_stand,
-                                                    g_state.left_face);
-                } else {
-                    ui_refresh_left_stand_only(g_state.bg_name,
-                                               g_state.left_stand,
-                                               g_state.left_face);
-                }
-
-                last_left_stand = g_state.left_stand;
-                last_left_face = g_state.left_face;
-
-            } else if (g_state.left_stand == last_left_stand &&
-                       g_state.left_face == last_left_face &&
-                       (g_state.right_stand != last_right_stand ||
-                        g_state.right_face != last_right_face)) {
-
-                // debug_log("RIGHT STAND PARTIAL UPDATE");
-
-                if (right_wipe_pending) {
-                    ui_refresh_right_stand_only_wipe(g_state.bg_name,
-                                                     g_state.right_stand,
-                                                     g_state.right_face);
-                } else {
-                    ui_refresh_right_stand_only(g_state.bg_name,
-                                                g_state.right_stand,
-                                                g_state.right_face);
-                }
-
-                last_right_stand = g_state.right_stand;
-                last_right_face = g_state.right_face;
-
-            } else {
-
-                // debug_log("STAND FULL REDRAW");
-
-
-                ui_draw_background(g_state.bg_name);
-                if (left_wipe_pending) {
-                    ui_draw_stand_center_wipe(g_state.left_stand, g_state.left_face,
-                                              STAND_LEFT_X, STAND_Y, 0);
-                } else {
-                    ui_draw_stand(g_state.left_stand, g_state.left_face,
-                                  STAND_LEFT_X, STAND_Y, 0);
-                }
-                if (right_wipe_pending) {
-                    ui_draw_stand_center_wipe(g_state.right_stand, g_state.right_face,
-                                              STAND_RIGHT_X, STAND_Y, 1);
-                } else {
-                    ui_draw_stand(g_state.right_stand, g_state.right_face,
-                                  STAND_RIGHT_X, STAND_Y, 1);
-                }
-
-                strncpy(last_bg_name, g_state.bg_name, sizeof(last_bg_name) - 1);
-                last_bg_name[sizeof(last_bg_name) - 1] = '\0';
-                last_left_stand = g_state.left_stand;
-                last_left_face = g_state.left_face;
-                last_right_stand = g_state.right_stand;
-                last_right_face = g_state.right_face;
-            }
-
-        stand_dirty = 0;
-        left_wipe_pending = 0;
-        right_wipe_pending = 0;
-        }
-        ui_draw_message_jis(name_jis, name_len, text_jis, text_len);
-
-        if (g_system_action != SYSTEM_ACTION_NONE) {
-            break;
-        }
-
-        if (g_request_scene_redraw) {
-            scene_dirty = 1;
-            stand_dirty = 0;
-            g_request_scene_redraw = 0;
-        }
-    }
-
-    fclose(fp);
-
-    if (g_system_action == SYSTEM_ACTION_EXIT) {
-        return GAME_RESULT_EXIT_TO_DOS;
-    }
-    if (g_system_action == SYSTEM_ACTION_TITLE) {
-        return GAME_RESULT_RETURN_TO_TITLE;
-    }
-
-    return GAME_RESULT_SCRIPT_END;
-}
-
 // スクリプト再生関数
 static void run_script_ascii(void)
 {
@@ -2413,140 +1537,6 @@ static void run_script_ascii(void)
 }
 
 
-// 文字列を立ち絵IDへ
-static enum StandId parse_stand_id(const char *name)
-{
-    int stand_no;
-
-    if (strcmp(name, "none") == 0) {
-        return STAND_NONE;
-    }
-
-    if (strncmp(name, "character", 9) == 0) {
-        if (sscanf(name + 9, "%d", &stand_no) == 1) {
-            if (stand_no >= 1 && stand_no <= 20) {
-                return (enum StandId)stand_no;
-            }
-        }
-    }
-
-    /* 古いスクリプト用の別名。不要なら後で消してOK */
-    /*
-    if (strcmp(name, "anzai") == 0) {
-        return STAND_CHARACTER01;
-    }
-    if (strcmp(name, "mitsui") == 0) {
-        return STAND_CHARACTER02;
-    }
-    if (strcmp(name, "sakuragi") == 0) {
-        return STAND_CHARACTER03;
-    }
-    */
-
-    return STAND_NONE;
-}
-
-// 文字列を表情IDへ
-static enum FaceId parse_face_id(const char *name)
-{
-    if (strcmp(name, "happy") == 0) {
-        return FACE_HAPPY;
-    }
-    if (strcmp(name, "angry") == 0) {
-        return FACE_ANGRY;
-    }
-    if (strcmp(name, "surprised") == 0) {
-        return FACE_SURPRISED;
-    }
-
-    return FACE_NORMAL;
-}
-
-// コマンド行を読む関数
-static void process_command_line(const char *line,
-                                 char *bg_name,
-                                 enum StandId *left_stand,
-                                 enum FaceId *left_face,
-                                 enum StandId *right_stand,
-                                 enum FaceId *right_face)
-{
-    char cmd[32];
-    char arg1[32];
-    char arg2[32];
-    char arg3[32];
-    char arg4[32];
-    int count;
-
-    cmd[0] = '\0';
-    arg1[0] = '\0';
-    arg2[0] = '\0';
-    arg3[0] = '\0';
-    arg4[0] = '\0';
-
-    count = sscanf(line,
-                   "%31s %31s %31s %31s %31s",
-                   cmd,
-                   arg1,
-                   arg2,
-                   arg3,
-                   arg4);
-
-    if (count <= 0) {
-        return;
-    }
-
-    if (strcmp(cmd, "#bg") == 0 || strcmp(cmd, "#bgwipe") == 0) {
-        if (count >= 2) {
-            strncpy(bg_name, arg1, 31);
-            bg_name[31] = '\0';
-        }
-        return;
-    }
-
-    if (strcmp(cmd, "#msgbox") == 0) {
-        int x0;
-        int y0;
-        int x1;
-        int y1;
-
-        if (count >= 5) {
-            x0 = atoi(arg1);
-            y0 = atoi(arg2);
-            x1 = atoi(arg3);
-            y1 = atoi(arg4);
-
-            ui_set_message_box(x0, y0, x1, y1);
-        }
-        return;
-    }
-
-
-
-    if (strcmp(cmd, "#left") == 0 || strcmp(cmd, "#leftwipe") == 0) {
-        if (count >= 2) {
-            *left_stand = parse_stand_id(arg1);
-        }
-        if (count >= 3) {
-            *left_face = parse_face_id(arg2);
-        } else {
-            *left_face = FACE_NORMAL;
-        }
-        return;
-    }
-
-    if (strcmp(cmd, "#right") == 0 || strcmp(cmd, "#rightwipe") == 0) {
-        if (count >= 2) {
-            *right_stand = parse_stand_id(arg1);
-        }
-        if (count >= 3) {
-            *right_face = parse_face_id(arg2);
-        } else {
-            *right_face = FACE_NORMAL;
-        }
-        return;
-    }
-}
-
 // 立ち絵を今の状態で描く関数
 static void ui_draw_current_stands(enum StandId left_stand,
                                    enum FaceId left_face,
@@ -2565,9 +1555,7 @@ static int show_selection_menu(const char *const *items, int item_count)
         return 0;
     }
 
-    for (i = 0; i < MAX_CHOICE_ITEMS; ++i) {
-        g_choice_work_lens[i] = 0;
-    }
+    reset_choice_lines();
 
     for (i = 0; i < item_count; ++i) {
         store_choice_line(i, items[i]);
@@ -2822,6 +1810,15 @@ static int input_wait_choice_jis(int choice_count, int allow_save_load)
     }
 }
 
+static void reset_choice_lines(void)
+{
+    int i;
+
+    for (i = 0; i < MAX_CHOICE_ITEMS; ++i) {
+        g_choice_work_lens[i] = 0;
+    }
+}
+
 static void store_choice_line(int index, const char *line)
 {
     if (index < 0 || index >= MAX_CHOICE_ITEMS) {
@@ -2835,61 +1832,11 @@ static void store_choice_line(int index, const char *line)
     );
 }
 
-static void handle_choice_block(FILE *fp, int *script_line)
-{
-    int i;
-    int choice_count;
-    int choice_start_line;
-    int choice_end_line;
-    int selected;
-
-    choice_start_line = *script_line;
-
-    for (i = 0; i < MAX_CHOICE_ITEMS; ++i) {
-        g_choice_work_lens[i] = 0;
-    }
-    choice_count = 0;
-
-    while (read_script_line(fp, g_choice_work_line, 256, script_line)) {
-        remove_newline(g_choice_work_line);
-        trim_leading_spaces(g_choice_work_line);
-
-        if (g_choice_work_line[0] == '\0' ||
-            g_choice_work_line[0] == ';') {
-            continue;
-        }
-
-        if (strcmp(g_choice_work_line, "#endchoice") == 0) {
-            break;
-        }
-
-        if (choice_count < MAX_CHOICE_ITEMS) {
-            store_choice_line(choice_count, g_choice_work_line);
-            choice_count++;
-        }
-    }
-
-    choice_end_line = *script_line;
-
-    if (choice_count < 2) {
-        g_state.script_line = choice_end_line;
-        return;
-    }
-
-    g_state.script_line = choice_start_line;
-    selected = input_wait_choice_jis(choice_count, 1);
-    if (selected == CHOICE_RESULT_LOAD_RESUME) {
-        return;
-    }
-
-    g_state.script_line = choice_end_line;
-    set_flag_value("choice", selected);
-}
-
 int main(void)
 {
     enum GameResult game_result;
     TitleContext title_context;
+    ScriptContext script_context;
 
         remove("debug.txt");
         debug_log("ADV98 START");
@@ -2941,7 +1888,28 @@ int main(void)
             break;
         }
 
-        game_result = run_script_sjis();
+        script_context.state = &g_state;
+        script_context.flags = g_flags;
+        script_context.pmd_available = g_pmd_available;
+        script_context.request_scene_redraw = &g_request_scene_redraw;
+        script_context.request_script_resume = &g_request_script_resume;
+        script_context.system_action = &g_system_action;
+        script_context.debug_log = debug_log;
+        script_context.set_message_box = ui_set_message_box;
+        script_context.draw_background = ui_draw_background;
+        script_context.draw_background_center_wipe = ui_draw_background_center_wipe;
+        script_context.draw_stand = ui_draw_stand;
+        script_context.draw_stand_center_wipe = ui_draw_stand_center_wipe;
+        script_context.refresh_left_stand_only = ui_refresh_left_stand_only;
+        script_context.refresh_left_stand_only_wipe = ui_refresh_left_stand_only_wipe;
+        script_context.refresh_right_stand_only = ui_refresh_right_stand_only;
+        script_context.refresh_right_stand_only_wipe = ui_refresh_right_stand_only_wipe;
+        script_context.draw_message_jis = ui_draw_message_jis;
+        script_context.reset_choice_lines = reset_choice_lines;
+        script_context.store_choice_line = store_choice_line;
+        script_context.wait_choice = input_wait_choice_jis;
+
+        game_result = run_script_sjis(&script_context);
 
         if (game_result == GAME_RESULT_SCRIPT_END ||
             game_result == GAME_RESULT_RETURN_TO_TITLE) {

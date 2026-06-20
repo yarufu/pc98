@@ -91,11 +91,17 @@ int show_title_menu(const TitleContext *ctx)
                                             TITLE_MENU_ITEM_COUNT);
 
         if (selected == 1) {
+            if (ctx->fm_se_loaded) {
+                pmd_play_fm_se(1);
+            }
             title_bgm_stop(ctx);
             return 1;
         }
 
         if (selected == 2) {
+            if (ctx->fm_se_loaded) {
+                pmd_play_fm_se(1);
+            }
             if (ctx->show_load_menu()) {
                 title_bgm_stop(ctx);
                 ctx->restore_scene_after_load();

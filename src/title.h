@@ -7,6 +7,7 @@ extern "C" {
 
 typedef struct {
     int pmd_available;
+    int fm_se_loaded;
     int (*show_selection_menu)(const char *const *items, int item_count);
     int (*show_load_menu)(void);
     void (*restore_scene_after_load)(void);

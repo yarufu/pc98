@@ -41,6 +41,7 @@ struct Message;
 static GameFlag g_flags[MAX_FLAGS];
 static GameState g_state;
 static int g_pmd_available = 0;
+static int g_fm_se_loaded = 0;
 
 // マウス制御
 static int g_mouse_available = 0;
@@ -1551,6 +1552,9 @@ static void show_save_menu(void)
     if (selected >= 1 && selected <= SAVE_SLOT_COUNT) {
         filename = save_get_slot_file(selected - 1);
         if (save_game_state(filename, &g_state, g_flags)) {
+            if (g_fm_se_loaded) {
+                pmd_play_fm_se(1);
+            }
             ui_show_notice(g_notice_saved);
         }
     }
@@ -1826,8 +1830,7 @@ int main(void)
         debug_log("PMD.COM is not resident.");
         debug_log("BGM commands will be ignored.");
     } else {
-        pmd_load_fm_se_file("SE.EFC");
-        pmd_play_fm_se(1);
+        g_fm_se_loaded = pmd_load_fm_se_file("SE.EFC");
     }
 
 
@@ -1859,6 +1862,7 @@ int main(void)
         g_system_action = SYSTEM_ACTION_NONE;
 
         title_context.pmd_available = g_pmd_available;
+        title_context.fm_se_loaded = g_fm_se_loaded;
         title_context.show_selection_menu = show_selection_menu;
         title_context.show_load_menu = show_load_menu;
         title_context.restore_scene_after_load = restore_scene_after_load;

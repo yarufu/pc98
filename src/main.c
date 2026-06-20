@@ -1825,6 +1825,9 @@ int main(void)
     if (!g_pmd_available) {
         debug_log("PMD.COM is not resident.");
         debug_log("BGM commands will be ignored.");
+    } else {
+        pmd_load_fm_se_file("SE.EFC");
+        pmd_play_fm_se(1);
     }
 
 

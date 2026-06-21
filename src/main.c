@@ -37,6 +37,16 @@ struct Message;
 #define SYSTEM_MENU_ITEM_COUNT 5
 #define MOUSE_CHOICE_MOTION_THRESHOLD 16
 #define CHOICE_RESULT_LOAD_RESUME 0
+#define KEY_CODE_ESCAPE 0x00
+#define KEY_CODE_CURSOR_UP 0x3A
+#define KEY_CODE_CURSOR_LEFT 0x3B
+#define KEY_CODE_CURSOR_RIGHT 0x3C
+#define KEY_CODE_CURSOR_DOWN 0x3D
+#define KEY_CODE_NUMPAD_8 0x43
+#define KEY_CODE_NUMPAD_4 0x46
+#define KEY_CODE_NUMPAD_6 0x48
+#define KEY_CODE_NUMPAD_2 0x4B
+#define KEY_CODE_NUMPAD_0 0x4E
 
 static GameFlag g_flags[MAX_FLAGS];
 static GameState g_state;
@@ -45,8 +55,6 @@ static int g_fm_se_loaded = 0;
 
 // マウス制御
 static int g_mouse_available = 0;
-static int g_save_key_armed = 1;
-static int g_load_key_armed = 1;
 static int g_request_scene_redraw = 0;
 static int g_request_script_resume = 0;
 static enum SystemAction g_system_action = SYSTEM_ACTION_NONE;
@@ -185,13 +193,18 @@ static void ui_show_notice(const char *message);
 static void show_save_menu(void);
 static int show_load_menu(void);
 static enum SystemAction show_system_menu(void);
+static int open_system_menu(void);
+static int open_system_menu_from_choice(int choice_count, int selected,
+                                        long *mouse_accum_x,
+                                        long *mouse_accum_y);
 static void app_cleanup(void);
-static void handle_save_hotkey(uint8_t ch);
 static int handle_load_hotkey(uint8_t ch);
 
 // マウス関連
 static int input_key_available(void);
-static uint8_t input_read_key(void);
+static uint8_t input_read_key(uint8_t *key_code);
+static int input_is_system_menu_key(uint8_t key_code);
+static int input_get_direction(uint8_t ch, uint8_t key_code);
 
 
 static void ui_draw_wait_mark(int x, int y, unsigned char color)
@@ -1006,7 +1019,7 @@ static void ui_hide_message_window_until_resume(void)
             continue;
         }
 
-        ch = input_read_key();
+        ch = input_read_key(0);
         if (ch == 0x0D) {
             break;
         }
@@ -1018,6 +1031,7 @@ static void ui_hide_message_window_until_resume(void)
 static int input_wait_key(void)
 {
     uint8_t ch;
+    uint8_t key_code;
 
 
     // debug_log("input_wait_key start");
@@ -1030,47 +1044,18 @@ static int input_wait_key(void)
 
         if (g_mouse_available && mouse98_right_pressed()) {
             mouse98_wait_right_release();
-            g_system_action = show_system_menu();
-            if (g_request_script_resume) {
-                return 1;
+            ch = 0;
+            key_code = KEY_CODE_ESCAPE;
+        } else {
+            if (!input_key_available()) {
+                continue;
             }
-            if (g_system_action == SYSTEM_ACTION_NONE) {
-                return 0;
-            }
-            return 1;
+
+            ch = input_read_key(&key_code);
         }
 
-        if (!input_key_available()) {
-            g_save_key_armed = 1;
-            g_load_key_armed = 1;
-            continue;
-        }
-
-        ch = input_read_key();
-
-        if ((ch == 'S' || ch == 's') && g_save_key_armed) {
-            handle_save_hotkey(ch);
-            g_save_key_armed = 0;
-            return 0;
-        }
-
-        if ((ch == 'L' || ch == 'l') && g_load_key_armed) {
-            int load_succeeded;
-
-            load_succeeded = handle_load_hotkey(ch);
-            g_load_key_armed = 0;
-            if (load_succeeded) {
-                return 1;
-            }
-            return 0;
-        }
-
-        if (ch != 'S' && ch != 's') {
-            g_save_key_armed = 1;
-        }
-
-        if (ch != 'L' && ch != 'l') {
-            g_load_key_armed = 1;
+        if (input_is_system_menu_key(key_code)) {
+            return open_system_menu();
         }
 
         if (ch == 'H' || ch == 'h') {
@@ -1085,36 +1070,68 @@ static int input_wait_key(void)
     // debug_log("input_wait_key done");
 }
 
-// キーボード、マウス入力監視
+// PC-98 キーボード BIOS による入力監視
 static int input_key_available(void)
 {
-    uint8_t status;
+    uint8_t available;
 
     __asm__ __volatile__(
-        "movb $0x0B, %%ah\n\t"
-        "int $0x21\n\t"
-        "movb %%al, %0"
-        : "=rm"(status)
+        "movb $0x01, %%ah\n\t"
+        "int $0x18\n\t"
+        "movb %%bh, %0"
+        : "=rm"(available)
         :
-        : "ax", "cc", "memory");
+        : "ax", "bx", "cc", "memory");
 
-    return status != 0;
+    return available != 0;
 }
 
-// キーボード、マウス入力データ読み取り
-static uint8_t input_read_key(void)
+// PC-98 キーボード BIOS による文字データとキーコードの読み取り
+static uint8_t input_read_key(uint8_t *key_code)
 {
-    uint8_t ch;
+    uint16_t key;
 
     __asm__ __volatile__(
-        "movb $0x08, %%ah\n\t"
-        "int $0x21\n\t"
-        "movb %%al, %0"
-        : "=rm"(ch)
+        "xorb %%ah, %%ah\n\t"
+        "int $0x18\n\t"
+        "movw %%ax, %0"
+        : "=rm"(key)
         :
         : "ax", "cc", "memory");
 
-    return ch;
+    if (key_code != 0) {
+        *key_code = (uint8_t)(key >> 8);
+    }
+
+    return (uint8_t)key;
+}
+
+static int input_is_system_menu_key(uint8_t key_code)
+{
+    return key_code == KEY_CODE_ESCAPE ||
+           key_code == KEY_CODE_NUMPAD_0;
+}
+
+static int input_get_direction(uint8_t ch, uint8_t key_code)
+{
+    if (key_code == KEY_CODE_CURSOR_UP ||
+        key_code == KEY_CODE_NUMPAD_8 || ch == 0x0B || ch == '8') {
+        return -2;
+    }
+    if (key_code == KEY_CODE_CURSOR_DOWN ||
+        key_code == KEY_CODE_NUMPAD_2 || ch == 0x0A || ch == '2') {
+        return 2;
+    }
+    if (key_code == KEY_CODE_CURSOR_LEFT ||
+        key_code == KEY_CODE_NUMPAD_4 || ch == 0x08 || ch == '4') {
+        return -1;
+    }
+    if (key_code == KEY_CODE_CURSOR_RIGHT ||
+        key_code == KEY_CODE_NUMPAD_6 || ch == 0x0C || ch == '6') {
+        return 1;
+    }
+
+    return 0;
 }
 
 
@@ -1349,12 +1366,6 @@ static void restore_palette_after_load(void)
     }
 }
 
-static void handle_save_hotkey(uint8_t ch)
-{
-    (void)ch;
-    show_save_menu();
-}
-
 static void resume_bgm_after_load(void)
 {
     if (!g_pmd_available) {
@@ -1455,7 +1466,7 @@ static void ui_show_notice(const char *message)
             continue;
         }
 
-        ch = input_read_key();
+        ch = input_read_key(0);
         if (ch == 0x0D) {
             break;
         }
@@ -1604,6 +1615,40 @@ static enum SystemAction show_system_menu(void)
     return SYSTEM_ACTION_NONE;
 }
 
+static int open_system_menu(void)
+{
+    g_system_action = show_system_menu();
+    if (g_request_script_resume ||
+        g_system_action != SYSTEM_ACTION_NONE) {
+        return 1;
+    }
+
+    return 0;
+}
+
+static int open_system_menu_from_choice(int choice_count, int selected,
+                                        long *mouse_accum_x,
+                                        long *mouse_accum_y)
+{
+    memcpy(g_choice_saved_jis, g_choice_work_jis,
+           sizeof(g_choice_saved_jis));
+    memcpy(g_choice_saved_lens, g_choice_work_lens,
+           sizeof(g_choice_saved_lens));
+
+    if (open_system_menu()) {
+        return 1;
+    }
+
+    memcpy(g_choice_work_jis, g_choice_saved_jis,
+           sizeof(g_choice_work_jis));
+    memcpy(g_choice_work_lens, g_choice_saved_lens,
+           sizeof(g_choice_work_lens));
+    *mouse_accum_x = 0;
+    *mouse_accum_y = 0;
+    ui_draw_choice_jis(choice_count, selected);
+    return 0;
+}
+
 static void app_cleanup(void)
 {
     if (g_pmd_available) {
@@ -1620,6 +1665,7 @@ static void app_cleanup(void)
 static int input_wait_choice_jis(int choice_count, int allow_save_load)
 {
     uint8_t ch;
+    uint8_t key_code;
     int selected;
     int next;
     int mouse_dx;
@@ -1629,6 +1675,7 @@ static int input_wait_choice_jis(int choice_count, int allow_save_load)
     long mouse_abs_x;
     long mouse_abs_y;
     int mouse_direction;
+    int keyboard_direction;
 
     selected = 1;
     mouse_accum_x = 0;
@@ -1653,24 +1700,11 @@ static int input_wait_choice_jis(int choice_count, int allow_save_load)
             if (allow_save_load && mouse98_right_pressed()) {
                 mouse98_wait_right_release();
 
-                memcpy(g_choice_saved_jis, g_choice_work_jis,
-                       sizeof(g_choice_saved_jis));
-                memcpy(g_choice_saved_lens, g_choice_work_lens,
-                       sizeof(g_choice_saved_lens));
-
-                g_system_action = show_system_menu();
-                if (g_request_script_resume ||
-                    g_system_action != SYSTEM_ACTION_NONE) {
+                if (open_system_menu_from_choice(choice_count, selected,
+                                                 &mouse_accum_x,
+                                                 &mouse_accum_y)) {
                     return CHOICE_RESULT_LOAD_RESUME;
                 }
-
-                memcpy(g_choice_work_jis, g_choice_saved_jis,
-                       sizeof(g_choice_work_jis));
-                memcpy(g_choice_work_lens, g_choice_saved_lens,
-                       sizeof(g_choice_work_lens));
-                mouse_accum_x = 0;
-                mouse_accum_y = 0;
-                ui_draw_choice_jis(choice_count, selected);
                 continue;
             }
 
@@ -1710,79 +1744,35 @@ static int input_wait_choice_jis(int choice_count, int allow_save_load)
                 next = selected + 1;
             }
         } else if (input_key_available()) {
-            ch = input_read_key();
+            ch = input_read_key(&key_code);
+            keyboard_direction = input_get_direction(ch, key_code);
 
             if (ch == 0x0D) {
                 return selected;
             }
 
-            if (allow_save_load &&
-                (ch == 'S' || ch == 's') && g_save_key_armed) {
-                memcpy(g_choice_saved_jis, g_choice_work_jis,
-                       sizeof(g_choice_saved_jis));
-                memcpy(g_choice_saved_lens, g_choice_work_lens,
-                       sizeof(g_choice_saved_lens));
-
-                show_save_menu();
-                g_save_key_armed = 0;
-
-                memcpy(g_choice_work_jis, g_choice_saved_jis,
-                       sizeof(g_choice_work_jis));
-                memcpy(g_choice_work_lens, g_choice_saved_lens,
-                       sizeof(g_choice_work_lens));
-                mouse_accum_x = 0;
-                mouse_accum_y = 0;
-                ui_draw_choice_jis(choice_count, selected);
-                continue;
-            }
-
-            if (allow_save_load &&
-                (ch == 'L' || ch == 'l') && g_load_key_armed) {
-                memcpy(g_choice_saved_jis, g_choice_work_jis,
-                       sizeof(g_choice_saved_jis));
-                memcpy(g_choice_saved_lens, g_choice_work_lens,
-                       sizeof(g_choice_saved_lens));
-
-                g_load_key_armed = 0;
-                if (handle_load_hotkey(ch)) {
+            if (allow_save_load && input_is_system_menu_key(key_code)) {
+                if (open_system_menu_from_choice(choice_count, selected,
+                                                 &mouse_accum_x,
+                                                 &mouse_accum_y)) {
                     return CHOICE_RESULT_LOAD_RESUME;
                 }
-
-                memcpy(g_choice_work_jis, g_choice_saved_jis,
-                       sizeof(g_choice_work_jis));
-                memcpy(g_choice_work_lens, g_choice_saved_lens,
-                       sizeof(g_choice_work_lens));
-                mouse_accum_x = 0;
-                mouse_accum_y = 0;
-                ui_draw_choice_jis(choice_count, selected);
                 continue;
             }
 
-            if (allow_save_load) {
-                if (ch != 'S' && ch != 's') {
-                    g_save_key_armed = 1;
-                }
-                if (ch != 'L' && ch != 'l') {
-                    g_load_key_armed = 1;
-                }
-            }
-
-            if (ch == 0x0B || ch == '8') {
+            if (keyboard_direction == -2) {
                 next = selected - CHOICE_COLUMNS;
-            } else if (ch == 0x0A || ch == '2') {
+            } else if (keyboard_direction == 2) {
                 next = selected + CHOICE_COLUMNS;
-            } else if (ch == 0x08 || ch == '4') {
+            } else if (keyboard_direction == -1) {
                 if ((selected - 1) % CHOICE_COLUMNS != 0) {
                     next = selected - 1;
                 }
-            } else if (ch == 0x0C || ch == '6') {
+            } else if (keyboard_direction == 1) {
                 if ((selected - 1) % CHOICE_COLUMNS != CHOICE_COLUMNS - 1) {
                     next = selected + 1;
                 }
             }
-        } else if (allow_save_load) {
-            g_save_key_armed = 1;
-            g_load_key_armed = 1;
         }
 
         if (next >= 1 && next <= choice_count && next != selected) {

@@ -13,6 +13,33 @@
 #define STAND_Y        9
 #define CHOICE_RESULT_LOAD_RESUME 0
 
+enum CommandResult {
+    COMMAND_NOT_HANDLED = 0,
+    COMMAND_HANDLED,
+    COMMAND_JUMPED
+};
+
+typedef struct {
+    char cmd[32];
+    char arg1[64];
+    char arg2[64];
+    char arg3[64];
+    int count;
+} ParsedCommand;
+
+typedef struct {
+    char last_bg_name[32];
+    enum StandId last_left_stand;
+    enum StandId last_right_stand;
+    enum FaceId last_left_face;
+    enum FaceId last_right_face;
+    int scene_dirty;
+    int stand_dirty;
+    int bg_wipe_pending;
+    int left_wipe_pending;
+    int right_wipe_pending;
+} SceneRenderState;
+
 // 改行削除関数
 static void remove_newline(char *str)
 {
@@ -536,6 +563,399 @@ static void process_command_line(const ScriptContext *ctx,
     }
 }
 
+static void parse_command(const char *line, ParsedCommand *command)
+{
+    command->cmd[0] = '\0';
+    command->arg1[0] = '\0';
+    command->arg2[0] = '\0';
+    command->arg3[0] = '\0';
+    command->count = sscanf(line, "%31s %63s %63s %63s",
+                            command->cmd, command->arg1,
+                            command->arg2, command->arg3);
+}
+
+static enum CommandResult handle_control_command(const ScriptContext *ctx,
+                                                 FILE *fp,
+                                                 int *script_line,
+                                                 const ParsedCommand *command)
+{
+    GameState *state;
+
+    state = ctx->state;
+
+    if (strcmp(command->cmd, "#label") == 0) {
+        return COMMAND_HANDLED;
+    }
+
+    if (strcmp(command->cmd, "#jump") == 0) {
+        if (command->count >= 2 &&
+            find_label_and_jump(ctx, fp, script_line, command->arg1)) {
+            return COMMAND_JUMPED;
+        }
+        return COMMAND_HANDLED;
+    }
+
+    if (strcmp(command->cmd, "#call") == 0) {
+        if (command->count >= 2) {
+            long return_file_pos;
+            int return_line;
+
+            if (state->call_stack_depth < 0 ||
+                state->call_stack_depth > CALL_STACK_MAX) {
+                debug_log("SCRIPT CALL invalid stack depth=%d; reset",
+                          state->call_stack_depth);
+                state->call_stack_depth = 0;
+            }
+
+            if (state->call_stack_depth >= CALL_STACK_MAX) {
+                debug_log("SCRIPT CALL stack full label=%s", command->arg1);
+                return COMMAND_HANDLED;
+            }
+
+            return_file_pos = ftell(fp);
+            return_line = *script_line;
+
+            if (find_label_and_jump(ctx, fp, script_line, command->arg1)) {
+                state->call_stack[state->call_stack_depth] = return_line;
+                state->call_stack_depth++;
+                debug_log("SCRIPT CALL label=%s return_line=%d depth=%d",
+                          command->arg1, return_line,
+                          state->call_stack_depth);
+                return COMMAND_JUMPED;
+            }
+
+            if (return_file_pos >= 0) {
+                fseek(fp, return_file_pos, SEEK_SET);
+            } else {
+                seek_script_after_line(ctx, fp, script_line, return_line);
+            }
+            *script_line = return_line;
+            state->script_line = *script_line;
+            debug_log("SCRIPT CALL label not found: %s", command->arg1);
+        } else {
+            debug_log("SCRIPT CALL missing label");
+        }
+        return COMMAND_HANDLED;
+    }
+
+    if (strcmp(command->cmd, "#return") == 0) {
+        int return_line;
+
+        if (state->call_stack_depth <= 0 ||
+            state->call_stack_depth > CALL_STACK_MAX) {
+            debug_log("SCRIPT RETURN without call depth=%d",
+                      state->call_stack_depth);
+            if (state->call_stack_depth < 0 ||
+                state->call_stack_depth > CALL_STACK_MAX) {
+                state->call_stack_depth = 0;
+            }
+            return COMMAND_HANDLED;
+        }
+
+        return_line = state->call_stack[state->call_stack_depth - 1];
+        if (seek_script_after_line(ctx, fp, script_line, return_line)) {
+            state->call_stack_depth--;
+            state->script_line = *script_line;
+            debug_log("SCRIPT RETURN line=%d depth=%d",
+                      return_line, state->call_stack_depth);
+            return COMMAND_JUMPED;
+        }
+        debug_log("SCRIPT RETURN invalid line=%d", return_line);
+        return COMMAND_HANDLED;
+    }
+
+    return COMMAND_NOT_HANDLED;
+}
+
+static enum CommandResult handle_flag_command(const ScriptContext *ctx,
+                                              FILE *fp,
+                                              int *script_line,
+                                              const ParsedCommand *command)
+{
+    if (strcmp(command->cmd, "#set") == 0) {
+        if (command->count >= 2) {
+            set_flag_on(ctx, command->arg1);
+        }
+        return COMMAND_HANDLED;
+    }
+    if (strcmp(command->cmd, "#reset") == 0) {
+        if (command->count >= 2) {
+            set_flag_off(ctx, command->arg1);
+        }
+        return COMMAND_HANDLED;
+    }
+    if (strcmp(command->cmd, "#if") == 0) {
+        if (command->count >= 3 && is_flag_on(ctx, command->arg1)) {
+            if (find_label_and_jump(ctx, fp, script_line, command->arg2)) {
+                return COMMAND_JUMPED;
+            }
+        }
+        return COMMAND_HANDLED;
+    }
+    if (strcmp(command->cmd, "#ifnot") == 0) {
+        if (command->count >= 3 && !is_flag_on(ctx, command->arg1)) {
+            if (find_label_and_jump(ctx, fp, script_line, command->arg2)) {
+                return COMMAND_JUMPED;
+            }
+        }
+        return COMMAND_HANDLED;
+    }
+    if (strcmp(command->cmd, "#add") == 0) {
+        if (command->count >= 3) {
+            add_flag_value(ctx, command->arg1, atoi(command->arg2));
+        }
+        return COMMAND_HANDLED;
+    }
+    if (strcmp(command->cmd, "#setnum") == 0) {
+        if (command->count >= 3) {
+            set_flag_value(ctx, command->arg1, atoi(command->arg2));
+        }
+        return COMMAND_HANDLED;
+    }
+    if (strcmp(command->cmd, "#ifge") == 0) {
+        if (command->count >= 4 &&
+            get_flag_value(ctx, command->arg1) >= atoi(command->arg2)) {
+            if (find_label_and_jump(ctx, fp, script_line, command->arg3)) {
+                return COMMAND_JUMPED;
+            }
+        }
+        return COMMAND_HANDLED;
+    }
+    if (strcmp(command->cmd, "#ifeq") == 0) {
+        if (command->count >= 4 &&
+            get_flag_value(ctx, command->arg1) == atoi(command->arg2)) {
+            if (find_label_and_jump(ctx, fp, script_line, command->arg3)) {
+                return COMMAND_JUMPED;
+            }
+        }
+        return COMMAND_HANDLED;
+    }
+
+    return COMMAND_NOT_HANDLED;
+}
+
+static enum CommandResult handle_external_command(const ScriptContext *ctx,
+                                                  const ParsedCommand *command,
+                                                  SceneRenderState *render)
+{
+    if (strcmp(command->cmd, "#pal") == 0) {
+        if (command->count >= 2) {
+            if (graph98_load_palette_file(command->arg1)) {
+                render->scene_dirty = 1;
+            } else {
+                debug_log("palette load failed: %s", command->arg1);
+            }
+        }
+        return COMMAND_HANDLED;
+    }
+
+    /* #se is intentionally ignored. Sound effects are handled by PMD/BGM. */
+    if (strcmp(command->cmd, "#se") == 0) {
+        return COMMAND_HANDLED;
+    }
+
+    if (strcmp(command->cmd, "#bgm") == 0) {
+        if (command->count >= 2) {
+            if (strcmp(ctx->state->bgm, command->arg1) == 0) {
+                return COMMAND_HANDLED;
+            }
+            strcpy(ctx->state->bgm, command->arg1);
+            if (ctx->pmd_available) {
+                pmd_stop_music();
+                if (pmd_load_music_file(command->arg1)) {
+                    pmd_start_music();
+                } else {
+                    debug_log("bgm load failed: %s", command->arg1);
+                }
+            }
+        }
+        return COMMAND_HANDLED;
+    }
+    if (strcmp(command->cmd, "#bgmstart") == 0) {
+        if (ctx->pmd_available) {
+            pmd_start_music();
+        }
+        return COMMAND_HANDLED;
+    }
+    if (strcmp(command->cmd, "#bgmstop") == 0) {
+        if (ctx->pmd_available) {
+            pmd_stop_music();
+        }
+        return COMMAND_HANDLED;
+    }
+    if (strcmp(command->cmd, "#bgmfade") == 0) {
+        if (ctx->pmd_available) {
+            pmd_fadeout_music();
+        }
+        return COMMAND_HANDLED;
+    }
+
+    return COMMAND_NOT_HANDLED;
+}
+
+static enum CommandResult handle_display_command(const ScriptContext *ctx,
+                                                 const char *line,
+                                                 const ParsedCommand *command,
+                                                 SceneRenderState *render)
+{
+    char old_bg_name[32];
+    enum StandId old_left_stand;
+    enum FaceId old_left_face;
+    enum StandId old_right_stand;
+    enum FaceId old_right_face;
+    GameState *state;
+
+    if (strcmp(command->cmd, "#bg") != 0 &&
+        strcmp(command->cmd, "#bgwipe") != 0 &&
+        strcmp(command->cmd, "#left") != 0 &&
+        strcmp(command->cmd, "#leftwipe") != 0 &&
+        strcmp(command->cmd, "#right") != 0 &&
+        strcmp(command->cmd, "#rightwipe") != 0 &&
+        strcmp(command->cmd, "#msgbox") != 0) {
+        return COMMAND_NOT_HANDLED;
+    }
+
+    state = ctx->state;
+    strncpy(old_bg_name, state->bg_name, sizeof(old_bg_name) - 1);
+    old_bg_name[sizeof(old_bg_name) - 1] = '\0';
+    old_left_stand = state->left_stand;
+    old_left_face = state->left_face;
+    old_right_stand = state->right_stand;
+    old_right_face = state->right_face;
+
+    if (command->count >= 2) {
+        if (strcmp(command->cmd, "#bgwipe") == 0) {
+            render->bg_wipe_pending = 1;
+        } else if (strcmp(command->cmd, "#bg") == 0) {
+            render->bg_wipe_pending = 0;
+        } else if (strcmp(command->cmd, "#leftwipe") == 0) {
+            render->left_wipe_pending = 1;
+        } else if (strcmp(command->cmd, "#left") == 0) {
+            render->left_wipe_pending = 0;
+        } else if (strcmp(command->cmd, "#rightwipe") == 0) {
+            render->right_wipe_pending = 1;
+        } else if (strcmp(command->cmd, "#right") == 0) {
+            render->right_wipe_pending = 0;
+        }
+    }
+
+    process_command_line(ctx, line, state->bg_name,
+                         &state->left_stand, &state->left_face,
+                         &state->right_stand, &state->right_face);
+
+    if (render->bg_wipe_pending ||
+        strcmp(state->bg_name, old_bg_name) != 0) {
+        render->scene_dirty = 1;
+        render->stand_dirty = 0;
+    } else if (state->left_stand != old_left_stand ||
+               state->left_face != old_left_face ||
+               state->right_stand != old_right_stand ||
+               state->right_face != old_right_face ||
+               render->left_wipe_pending ||
+               render->right_wipe_pending) {
+        render->stand_dirty = 1;
+    }
+
+    return COMMAND_HANDLED;
+}
+
+static void draw_full_scene(const ScriptContext *ctx,
+                            SceneRenderState *render,
+                            int use_background_wipe)
+{
+    GameState *state;
+
+    state = ctx->state;
+    if (use_background_wipe && render->bg_wipe_pending) {
+        ctx->draw_background_center_wipe(state->bg_name);
+    } else {
+        ctx->draw_background(state->bg_name);
+    }
+    if (render->left_wipe_pending) {
+        ctx->draw_stand_center_wipe(state->left_stand, state->left_face,
+                                    STAND_LEFT_X, STAND_Y, 0);
+    } else {
+        ctx->draw_stand(state->left_stand, state->left_face,
+                        STAND_LEFT_X, STAND_Y, 0);
+    }
+    if (render->right_wipe_pending) {
+        ctx->draw_stand_center_wipe(state->right_stand, state->right_face,
+                                    STAND_RIGHT_X, STAND_Y, 1);
+    } else {
+        ctx->draw_stand(state->right_stand, state->right_face,
+                        STAND_RIGHT_X, STAND_Y, 1);
+    }
+
+    strncpy(render->last_bg_name, state->bg_name,
+            sizeof(render->last_bg_name) - 1);
+    render->last_bg_name[sizeof(render->last_bg_name) - 1] = '\0';
+    render->last_left_stand = state->left_stand;
+    render->last_left_face = state->left_face;
+    render->last_right_stand = state->right_stand;
+    render->last_right_face = state->right_face;
+}
+
+static void redraw_scene_if_needed(const ScriptContext *ctx,
+                                   SceneRenderState *render)
+{
+    GameState *state;
+
+    state = ctx->state;
+    if (render->scene_dirty ||
+        strcmp(render->last_bg_name, state->bg_name) != 0) {
+        draw_full_scene(ctx, render, 1);
+        render->scene_dirty = 0;
+        render->stand_dirty = 0;
+        render->bg_wipe_pending = 0;
+        render->left_wipe_pending = 0;
+        render->right_wipe_pending = 0;
+        return;
+    }
+
+    if (!render->stand_dirty) {
+        return;
+    }
+
+    if ((state->left_stand != render->last_left_stand ||
+         state->left_face != render->last_left_face) &&
+        state->right_stand == render->last_right_stand &&
+        state->right_face == render->last_right_face) {
+        if (render->left_wipe_pending) {
+            ctx->refresh_left_stand_only_wipe(state->bg_name,
+                                              state->left_stand,
+                                              state->left_face);
+        } else {
+            ctx->refresh_left_stand_only(state->bg_name,
+                                         state->left_stand,
+                                         state->left_face);
+        }
+        render->last_left_stand = state->left_stand;
+        render->last_left_face = state->left_face;
+    } else if (state->left_stand == render->last_left_stand &&
+               state->left_face == render->last_left_face &&
+               (state->right_stand != render->last_right_stand ||
+                state->right_face != render->last_right_face)) {
+        if (render->right_wipe_pending) {
+            ctx->refresh_right_stand_only_wipe(state->bg_name,
+                                               state->right_stand,
+                                               state->right_face);
+        } else {
+            ctx->refresh_right_stand_only(state->bg_name,
+                                          state->right_stand,
+                                          state->right_face);
+        }
+        render->last_right_stand = state->right_stand;
+        render->last_right_face = state->right_face;
+    } else {
+        /* The original fallback redraw does not use a background wipe. */
+        draw_full_scene(ctx, render, 0);
+    }
+
+    render->stand_dirty = 0;
+    render->left_wipe_pending = 0;
+    render->right_wipe_pending = 0;
+}
+
 // 日本語 script.txt を再生する関数
 enum GameResult run_script_sjis(const ScriptContext *ctx)
 {
@@ -551,17 +971,7 @@ enum GameResult run_script_sjis(const ScriptContext *ctx)
     int name_len;
     int text_len;
 
-    char last_bg_name[32];
-    enum StandId last_left_stand;
-    enum StandId last_right_stand;
-    enum FaceId last_left_face;
-    enum FaceId last_right_face;
-    int scene_dirty;
-
-    int stand_dirty;
-    int bg_wipe_pending;
-    int left_wipe_pending;
-    int right_wipe_pending;
+    SceneRenderState render;
 
     if (ctx == 0 || ctx->state == 0 || ctx->flags == 0 ||
         ctx->request_scene_redraw == 0 ||
@@ -572,10 +982,10 @@ enum GameResult run_script_sjis(const ScriptContext *ctx)
 
     state = ctx->state;
 
-    stand_dirty = 0;
-    bg_wipe_pending = 0;
-    left_wipe_pending = 0;
-    right_wipe_pending = 0;
+    render.stand_dirty = 0;
+    render.bg_wipe_pending = 0;
+    render.left_wipe_pending = 0;
+    render.right_wipe_pending = 0;
     script_line = 0;
 
     current_name[0] = '\0';
@@ -589,12 +999,12 @@ enum GameResult run_script_sjis(const ScriptContext *ctx)
         state->right_face = FACE_NORMAL;
     }
 
-    last_bg_name[0] = '\0';
-    last_left_stand = STAND_NONE;
-    last_right_stand = STAND_NONE;
-    last_left_face = FACE_NORMAL;
-    last_right_face = FACE_NORMAL;
-    scene_dirty = 1;
+    render.last_bg_name[0] = '\0';
+    render.last_left_stand = STAND_NONE;
+    render.last_right_stand = STAND_NONE;
+    render.last_left_face = FACE_NORMAL;
+    render.last_right_face = FACE_NORMAL;
+    render.scene_dirty = 1;
 
     fp = fopen("script.txt", "rb");
     if (fp == 0) {
@@ -606,11 +1016,11 @@ enum GameResult run_script_sjis(const ScriptContext *ctx)
         if (*ctx->request_script_resume) {
             resume_script_line(ctx, fp, &script_line,
                                current_name, sizeof(current_name));
-            scene_dirty = 1;
-            stand_dirty = 0;
-            bg_wipe_pending = 0;
-            left_wipe_pending = 0;
-            right_wipe_pending = 0;
+            render.scene_dirty = 1;
+            render.stand_dirty = 0;
+            render.bg_wipe_pending = 0;
+            render.left_wipe_pending = 0;
+            render.right_wipe_pending = 0;
             *ctx->request_scene_redraw = 0;
             *ctx->request_script_resume = 0;
         }
@@ -628,21 +1038,21 @@ enum GameResult run_script_sjis(const ScriptContext *ctx)
         }
 
         if (line[0] == '#') {
-            char cmd[32];
-            char arg1[64];
-            char arg2[64];
-            char arg3[64];
-            int count;
+            ParsedCommand command;
 
-            cmd[0] = '\0';
-            arg1[0] = '\0';
-            arg2[0] = '\0';
-            arg3[0] = '\0';
+            parse_command(line, &command);
 
-            count = sscanf(line, "%31s %63s %63s %63s",
-                           cmd, arg1, arg2, arg3);
+            /*
+             * Command dispatch (commands currently used by script.txt):
+             *   here:     #choice, #endchoice
+             *   control:  #label, #jump, #call, #return
+             *   flags:    #setnum, #ifeq
+             *   external: #pal, #bgm
+             *   display:  #bgwipe, #leftwipe, #rightwipe
+             * Other supported commands are routed through the same groups.
+             */
 
-            if (strcmp(cmd, "#choice") == 0) {
+            if (strcmp(command.cmd, "#choice") == 0) {
                 handle_choice_block(ctx, fp, &script_line);
                 if (*ctx->system_action != SYSTEM_ACTION_NONE) {
                     break;
@@ -650,282 +1060,26 @@ enum GameResult run_script_sjis(const ScriptContext *ctx)
                 continue;
             }
 
-            if (strcmp(cmd, "#endchoice") == 0) {
+            if (strcmp(command.cmd, "#endchoice") == 0) {
                 continue;
             }
 
-            if (strcmp(cmd, "#label") == 0) {
+            if (handle_control_command(ctx, fp, &script_line, &command) !=
+                COMMAND_NOT_HANDLED) {
                 continue;
             }
 
-            if (strcmp(cmd, "#jump") == 0) {
-                if (count >= 2) {
-                    find_label_and_jump(ctx, fp, &script_line, arg1);
-                }
+            if (handle_flag_command(ctx, fp, &script_line, &command) !=
+                COMMAND_NOT_HANDLED) {
                 continue;
             }
 
-            if (strcmp(cmd, "#call") == 0) {
-                if (count >= 2) {
-                    long return_file_pos;
-                    int return_line;
-
-                    if (state->call_stack_depth < 0 ||
-                        state->call_stack_depth > CALL_STACK_MAX) {
-                        debug_log("SCRIPT CALL invalid stack depth=%d; reset",
-                                  state->call_stack_depth);
-                        state->call_stack_depth = 0;
-                    }
-
-                    if (state->call_stack_depth >= CALL_STACK_MAX) {
-                        debug_log("SCRIPT CALL stack full label=%s", arg1);
-                        continue;
-                    }
-
-                    return_file_pos = ftell(fp);
-                    return_line = script_line;
-
-                    if (find_label_and_jump(ctx, fp, &script_line, arg1)) {
-                        state->call_stack[state->call_stack_depth] = return_line;
-                        state->call_stack_depth++;
-                        debug_log("SCRIPT CALL label=%s return_line=%d depth=%d",
-                                  arg1, return_line,
-                                  state->call_stack_depth);
-                    } else {
-                        if (return_file_pos >= 0) {
-                            fseek(fp, return_file_pos, SEEK_SET);
-                        } else {
-                            seek_script_after_line(ctx, fp, &script_line, return_line);
-                        }
-                        script_line = return_line;
-                        state->script_line = script_line;
-                        debug_log("SCRIPT CALL label not found: %s", arg1);
-                    }
-                } else {
-                    debug_log("SCRIPT CALL missing label");
-                }
+            if (handle_external_command(ctx, &command, &render) !=
+                COMMAND_NOT_HANDLED) {
                 continue;
             }
 
-            if (strcmp(cmd, "#return") == 0) {
-                int return_line;
-
-                if (state->call_stack_depth <= 0 ||
-                    state->call_stack_depth > CALL_STACK_MAX) {
-                    debug_log("SCRIPT RETURN without call depth=%d",
-                              state->call_stack_depth);
-                    if (state->call_stack_depth < 0 ||
-                        state->call_stack_depth > CALL_STACK_MAX) {
-                        state->call_stack_depth = 0;
-                    }
-                    continue;
-                }
-
-                return_line =
-                    state->call_stack[state->call_stack_depth - 1];
-                if (seek_script_after_line(ctx, fp, &script_line, return_line)) {
-                    state->call_stack_depth--;
-                    state->script_line = script_line;
-                    debug_log("SCRIPT RETURN line=%d depth=%d",
-                              return_line, state->call_stack_depth);
-                } else {
-                    debug_log("SCRIPT RETURN invalid line=%d", return_line);
-                }
-                continue;
-            }
-
-            if (strcmp(cmd, "#set") == 0) {
-                if (count >= 2) {
-                    set_flag_on(ctx, arg1);
-                }
-                continue;
-            }
-
-            if (strcmp(cmd, "#reset") == 0) {
-                if (count >= 2) {
-                    set_flag_off(ctx, arg1);
-                }
-                continue;
-            }
-
-            if (strcmp(cmd, "#if") == 0) {
-                if (count >= 3) {
-                    if (is_flag_on(ctx, arg1)) {
-                        find_label_and_jump(ctx, fp, &script_line, arg2);
-                    }
-                }
-                continue;
-            }
-
-            if (strcmp(cmd, "#ifnot") == 0) {
-                if (count >= 3) {
-                    if (!is_flag_on(ctx, arg1)) {
-                        find_label_and_jump(ctx, fp, &script_line, arg2);
-                    }
-                }
-                continue;
-            }
-
-            if (strcmp(cmd,"#add") == 0) {
-                if (count >= 3) {
-                    add_flag_value(ctx, arg1, atoi(arg2));
-                }
-                continue;
-            }
-
-            if (strcmp(cmd, "#setnum") == 0) {
-                if (count >= 3) {
-                    set_flag_value(ctx, arg1, atoi(arg2));
-                }
-                continue;
-            }
-
-            if (strcmp(cmd, "#ifge") == 0) {
-                if (count >= 4) {
-                    if (get_flag_value(ctx, arg1) >= atoi(arg2)) {
-                        find_label_and_jump(ctx, fp, &script_line, arg3);
-                    }
-                }
-                continue;
-            }
-
-            if (strcmp(cmd, "#ifeq") == 0) {
-                if (count >= 4) {
-                    if (get_flag_value(ctx, arg1) == atoi(arg2)) {
-                        find_label_and_jump(ctx, fp, &script_line, arg3);
-                    }
-                }
-                continue;
-            }
-
-            if (strcmp(cmd, "#pal") == 0) {
-                if (count >= 2) {
-                    // printf("[PAL] load: %s\n", arg1);
-                    if (graph98_load_palette_file(arg1)) {
-                        // printf("[PAL] success\n");
-                        scene_dirty = 1;
-                    } else {
-                        debug_log("palette load failed: %s", arg1);
-                        // printf("[PAL] FAILED\n");
-                    }
-                } else {
-                    // printf("[PAL] invalid args\n");
-                }
-                continue;
-            }
-
-            // #seはコメントアウト
-            // BGM/SEはPMD(#bgm)に任せるため
-            /*
-            if (strcmp(cmd, "#se") == 0) {
-                if (count >= 2) {
-                    if (strcmp(arg1, "beep") == 0) {
-                        se86_play_beep();
-                    } else if (strcmp(arg1, "beep2") == 0) {
-                        se86_play_beep2();
-                    }
-                }
-                continue;
-            }
-            */
-            // 未知コマンド扱いで下に流れる可能性があるので、一応#seを無視する処理は入れておく
-            if (strcmp(cmd, "#se") == 0) {
-                continue;
-            }
-
-            if (strcmp(cmd, "#bgm") == 0) {
-                if (count >= 2) {
-
-                    if (strcmp(state->bgm, arg1) == 0) {
-                        continue;
-                    }
-
-                    strcpy(state->bgm, arg1);
-
-                    if (ctx->pmd_available) {
-
-                        pmd_stop_music();
-
-                        if (pmd_load_music_file(arg1)) {
-                            pmd_start_music();
-                        }else{
-                            debug_log("bgm load failed: %s", arg1);
-                        }
-                    }
-                }
-                continue;
-            }
-
-            if (strcmp(cmd, "#bgmstart") == 0) {
-                if (ctx->pmd_available) {
-                    pmd_start_music();
-                }
-                continue;
-            }
-
-            if (strcmp(cmd, "#bgmstop") == 0) {
-                if (ctx->pmd_available) {
-                    pmd_stop_music();
-                }
-                continue;
-            }
-
-            if (strcmp(cmd, "#bgmfade") == 0) {
-                if (ctx->pmd_available) {
-                    pmd_fadeout_music();
-                }
-                continue;
-            }
-
-            {
-                char old_bg_name[32];
-                enum StandId old_left_stand;
-                enum FaceId old_left_face;
-                enum StandId old_right_stand;
-                enum FaceId old_right_face;
-
-                strncpy(old_bg_name, state->bg_name, sizeof(old_bg_name) - 1);
-                old_bg_name[sizeof(old_bg_name) - 1] = '\0';
-                old_left_stand = state->left_stand;
-                old_left_face = state->left_face;
-                old_right_stand = state->right_stand;
-                old_right_face = state->right_face;
-
-                if (count >= 2) {
-                    if (strcmp(cmd, "#bgwipe") == 0) {
-                        bg_wipe_pending = 1;
-                    } else if (strcmp(cmd, "#bg") == 0) {
-                        bg_wipe_pending = 0;
-                    } else if (strcmp(cmd, "#leftwipe") == 0) {
-                        left_wipe_pending = 1;
-                    } else if (strcmp(cmd, "#left") == 0) {
-                        left_wipe_pending = 0;
-                    } else if (strcmp(cmd, "#rightwipe") == 0) {
-                        right_wipe_pending = 1;
-                    } else if (strcmp(cmd, "#right") == 0) {
-                        right_wipe_pending = 0;
-                    }
-                }
-
-                process_command_line(ctx, line,
-                                     state->bg_name,
-                                     &state->left_stand,
-                                     &state->left_face,
-                                     &state->right_stand,
-                                     &state->right_face);
-
-                if (bg_wipe_pending || strcmp(state->bg_name, old_bg_name) != 0) {
-                    scene_dirty = 1;
-                    stand_dirty = 0;
-                } else if (state->left_stand != old_left_stand ||
-                           state->left_face != old_left_face ||
-                           state->right_stand != old_right_stand ||
-                           state->right_face != old_right_face ||
-                           left_wipe_pending ||
-                           right_wipe_pending) {
-                    stand_dirty = 1;
-                }
-            }
+            handle_display_command(ctx, line, &command, &render);
             continue;
         }
 
@@ -951,121 +1105,7 @@ enum GameResult run_script_sjis(const ScriptContext *ctx)
             continue;
         }
 
-        // 変化があれば部分的に再描画
-        if (scene_dirty || strcmp(last_bg_name, state->bg_name) != 0) {
-
-            if (bg_wipe_pending) {
-                ctx->draw_background_center_wipe(state->bg_name);
-            } else {
-                ctx->draw_background(state->bg_name);
-            }
-            if (left_wipe_pending) {
-                ctx->draw_stand_center_wipe(state->left_stand, state->left_face,
-                                            STAND_LEFT_X, STAND_Y, 0);
-            } else {
-                ctx->draw_stand(state->left_stand, state->left_face,
-                                STAND_LEFT_X, STAND_Y, 0);
-            }
-            if (right_wipe_pending) {
-                ctx->draw_stand_center_wipe(state->right_stand, state->right_face,
-                                            STAND_RIGHT_X, STAND_Y, 1);
-            } else {
-                ctx->draw_stand(state->right_stand, state->right_face,
-                                STAND_RIGHT_X, STAND_Y, 1);
-            }
-
-            strncpy(last_bg_name, state->bg_name, sizeof(last_bg_name) - 1);
-            last_bg_name[sizeof(last_bg_name) - 1] = '\0';
-            last_left_stand = state->left_stand;
-            last_left_face = state->left_face;
-            last_right_stand = state->right_stand;
-            last_right_face = state->right_face;
-
-            scene_dirty = 0;
-            stand_dirty = 0;
-            bg_wipe_pending = 0;
-            left_wipe_pending = 0;
-            right_wipe_pending = 0;
-
-        } else if (stand_dirty) {
-
-            /*
-             * 左もしくは右立ち絵だけ部分更新する。
-             * どっちの条件に引っかからなかった場合は、安全のため全体再描画に戻す。
-             */
-            if ((state->left_stand != last_left_stand ||
-                state->left_face != last_left_face) &&
-                state->right_stand == last_right_stand &&
-                state->right_face == last_right_face) {
-
-                // debug_log("LEFT STAND PARTIAL UPDATE");
-
-                if (left_wipe_pending) {
-                    ctx->refresh_left_stand_only_wipe(state->bg_name,
-                                                      state->left_stand,
-                                                      state->left_face);
-                } else {
-                    ctx->refresh_left_stand_only(state->bg_name,
-                                                 state->left_stand,
-                                                 state->left_face);
-                }
-
-                last_left_stand = state->left_stand;
-                last_left_face = state->left_face;
-
-            } else if (state->left_stand == last_left_stand &&
-                       state->left_face == last_left_face &&
-                       (state->right_stand != last_right_stand ||
-                        state->right_face != last_right_face)) {
-
-                // debug_log("RIGHT STAND PARTIAL UPDATE");
-
-                if (right_wipe_pending) {
-                    ctx->refresh_right_stand_only_wipe(state->bg_name,
-                                                       state->right_stand,
-                                                       state->right_face);
-                } else {
-                    ctx->refresh_right_stand_only(state->bg_name,
-                                                  state->right_stand,
-                                                  state->right_face);
-                }
-
-                last_right_stand = state->right_stand;
-                last_right_face = state->right_face;
-
-            } else {
-
-                // debug_log("STAND FULL REDRAW");
-
-
-                ctx->draw_background(state->bg_name);
-                if (left_wipe_pending) {
-                    ctx->draw_stand_center_wipe(state->left_stand, state->left_face,
-                                                STAND_LEFT_X, STAND_Y, 0);
-                } else {
-                    ctx->draw_stand(state->left_stand, state->left_face,
-                                    STAND_LEFT_X, STAND_Y, 0);
-                }
-                if (right_wipe_pending) {
-                    ctx->draw_stand_center_wipe(state->right_stand, state->right_face,
-                                                STAND_RIGHT_X, STAND_Y, 1);
-                } else {
-                    ctx->draw_stand(state->right_stand, state->right_face,
-                                    STAND_RIGHT_X, STAND_Y, 1);
-                }
-
-                strncpy(last_bg_name, state->bg_name, sizeof(last_bg_name) - 1);
-                last_bg_name[sizeof(last_bg_name) - 1] = '\0';
-                last_left_stand = state->left_stand;
-                last_left_face = state->left_face;
-                last_right_stand = state->right_stand;
-                last_right_face = state->right_face;
-            }
-
-        stand_dirty = 0;
-        left_wipe_pending = 0;
-        right_wipe_pending = 0;
-        }
+        redraw_scene_if_needed(ctx, &render);
         ctx->draw_message_jis(name_jis, name_len, text_jis, text_len);
 
         if (*ctx->system_action != SYSTEM_ACTION_NONE) {
@@ -1073,8 +1113,8 @@ enum GameResult run_script_sjis(const ScriptContext *ctx)
         }
 
         if (*ctx->request_scene_redraw) {
-            scene_dirty = 1;
-            stand_dirty = 0;
+            render.scene_dirty = 1;
+            render.stand_dirty = 0;
             *ctx->request_scene_redraw = 0;
         }
     }

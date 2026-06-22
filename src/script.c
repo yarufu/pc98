@@ -585,6 +585,30 @@ static enum CommandResult handle_flag_command(const ScriptContext *ctx,
     return COMMAND_NOT_HANDLED;
 }
 
+static int parse_fm_se_number(const char *text, int *number)
+{
+    int value;
+    int i;
+
+    if (text == 0 || text[0] == '\0' || number == 0) {
+        return 0;
+    }
+
+    value = 0;
+    for (i = 0; text[i] != '\0'; ++i) {
+        if (text[i] < '0' || text[i] > '9') {
+            return 0;
+        }
+        value = value * 10 + (text[i] - '0');
+        if (value > 127) {
+            return 0;
+        }
+    }
+
+    *number = value;
+    return 1;
+}
+
 static enum CommandResult handle_external_command(const ScriptContext *ctx,
                                                   const ParsedCommand *command,
                                                   SceneRenderState *render)
@@ -600,8 +624,13 @@ static enum CommandResult handle_external_command(const ScriptContext *ctx,
         return COMMAND_HANDLED;
     }
 
-    /* #se is intentionally ignored. Sound effects are handled by PMD/BGM. */
     if (strcmp(command->cmd, "#se") == 0) {
+        int se_number;
+
+        if (ctx->fm_se_loaded && command->count >= 2 &&
+            parse_fm_se_number(command->arg1, &se_number)) {
+            pmd_play_fm_se((uint8_t)se_number);
+        }
         return COMMAND_HANDLED;
     }
 

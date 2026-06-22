@@ -22,6 +22,7 @@ typedef struct {
     GameState *state;
     GameFlag *flags;
     int pmd_available;
+    int fm_se_loaded;
     int *request_scene_redraw;
     int *request_script_resume;
     enum SystemAction *system_action;

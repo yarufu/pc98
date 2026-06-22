@@ -1866,6 +1866,7 @@ int main(void)
         script_context.state = &g_state;
         script_context.flags = g_flags;
         script_context.pmd_available = g_pmd_available;
+        script_context.fm_se_loaded = g_fm_se_loaded;
         script_context.request_scene_redraw = &g_request_scene_redraw;
         script_context.request_script_resume = &g_request_script_resume;
         script_context.system_action = &g_system_action;

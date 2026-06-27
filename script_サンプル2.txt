@@ -1,0 +1,187 @@
+;
+;「見る」、「話す」、「移動」のあるイベント進行の例
+;（選択肢、数値フラグを使用したサンプル）
+;
+;詳細は以下ページ参照
+;  PC-98ノベルゲームエンジン開発：スクリプト命令まとめ
+;　https://pokug.net/entry/2026/05/03/233421
+;
+
+#pal adv.pal
+#bg class
+#bgm PLAY.M
+#right character01 normal
+
+[サンプル子]
+こんにちは。ＡＤＶ９８．ＥＸＥのサンプルです。
+
+
+#label classroom
+
+#ifeq progress 0 classroom0
+#ifeq progress 1 classroom1
+#ifeq progress 2 classroom2
+
+
+;
+; #label classroom シーン0
+;
+
+#label classroom0
+
+#choice
+
+見る
+話す
+移動
+
+#endchoice
+
+#ifeq choice 1 classroom0_look
+#ifeq choice 2 classroom0_talk
+#ifeq choice 3 classroom0_move
+
+;見る
+#label classroom0_look
+#call common_look
+#jump classroom
+
+;話す
+#label classroom0_talk
+
+[サンプル子]
+学校から配布されたタブレットPCが、なにもしてないのに動かなくなりました。
+
+[健一]
+絶対なにかしたよね？
+
+#setnum progress 1
+#jump classroom
+
+;帰る
+#label classroom0_move
+#call common_cannot_move
+#jump classroom
+
+
+;
+; #label classroom シーン1
+;
+#label classroom1
+
+#choice
+
+見る
+話す
+移動
+
+#endchoice
+
+#ifeq choice 1 classroom1_look
+#ifeq choice 2 classroom1_talk
+#ifeq choice 3 classroom1_move
+
+;見る
+#label classroom1_look
+#call common_look
+#jump classroom
+
+;話す
+#label classroom1_talk
+
+[サンプル子]
+5時間目の世界史、呪文にしか聞こえませんでした……
+
+#setnum progress 2
+#jump classroom
+
+;帰る
+#label classroom1_move
+#call common_cannot_move
+#jump classroom
+
+
+;
+; #label classroom シーン2
+;
+#label classroom2
+
+#choice
+
+見る
+話す
+移動
+
+#endchoice
+
+#ifeq choice 1 classroom2_look
+#ifeq choice 2 classroom2_talk
+#ifeq choice 3 classroom2_move
+
+
+;見る
+#label classroom2_look
+#call common_look
+#jump classroom
+
+;話す
+#label classroom2_talk
+
+[健一]
+何してるの？
+
+[サンプル子]
+読書です
+
+[健一]
+面白い？
+
+[サンプル子]
+はい
+
+[健一]
+どんな話？
+
+[サンプル子]
+刑事ものです
+
+[健一]
+へえ
+
+[サンプル子]
+犯人はヤス
+
+[健一]
+ネタバレやめてね？
+
+#jump end
+
+
+;帰る
+#label classroom2_move
+#call common_cannot_move
+#jump classroom2
+
+
+
+
+; 共通関数
+;
+#label common_look
+
+[]
+サンプル子がこっちを見ている。
+
+#return
+
+#label common_cannot_move
+
+[]
+ふしぎな力で移動できない。
+
+#return
+
+#label end
+
+[]
+おわり

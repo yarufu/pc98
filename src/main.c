@@ -8,6 +8,7 @@
 #include "script.h"
 #include "debug.h"
 #include "game_state.h"
+#include "menu.h"
 
 
 #include <stdint.h>
@@ -33,8 +34,6 @@ struct Message;
 #define MAX_CHOICE_CHARS 64
 #define MAX_CHOICE_DRAW_CHARS 8
 #define CHOICE_COLUMNS 2
-#define SAVE_MENU_ITEM_COUNT (SAVE_SLOT_COUNT + 1)
-#define SYSTEM_MENU_ITEM_COUNT 5
 #define MOUSE_CHOICE_MOTION_THRESHOLD 16
 #define CHOICE_RESULT_LOAD_RESUME 0
 #define KEY_CODE_ESCAPE 0x00
@@ -93,45 +92,6 @@ static int g_choice_work_lens[MAX_CHOICE_ITEMS];
 static uint16_t g_choice_saved_jis[MAX_CHOICE_ITEMS][MAX_CHOICE_CHARS];
 static int g_choice_saved_lens[MAX_CHOICE_ITEMS];
 
-/* Shift_JIS: セーブ１～３、ロード１～３、戻る */
-static const char g_save_menu_1[] = "\x83\x5A\x81\x5B\x83\x75\x82\x50";
-static const char g_save_menu_2[] = "\x83\x5A\x81\x5B\x83\x75\x82\x51";
-static const char g_save_menu_3[] = "\x83\x5A\x81\x5B\x83\x75\x82\x52";
-static const char g_load_menu_1[] = "\x83\x8D\x81\x5B\x83\x68\x82\x50";
-static const char g_load_menu_2[] = "\x83\x8D\x81\x5B\x83\x68\x82\x51";
-static const char g_load_menu_3[] = "\x83\x8D\x81\x5B\x83\x68\x82\x52";
-static const char g_menu_back[] = "\x96\xDF\x82\xE9";
-/* Shift_JIS: セーブ、ロード、タイトルへ戻る、ゲーム終了、キャンセル */
-static const char g_system_menu_save[] =
-    "\x83\x5A\x81\x5B\x83\x75";
-static const char g_system_menu_load[] =
-    "\x83\x8D\x81\x5B\x83\x68";
-static const char g_system_menu_cancel[] =
-    "\x83\x4C\x83\x83\x83\x93\x83\x5A\x83\x8B";
-static const char g_system_menu_title[] =
-    "\x83\x5E\x83\x43\x83\x67\x83\x8B\x82\xD6\x96\xDF\x82\xE9";
-static const char g_system_menu_exit[] =
-    "\x83\x51\x81\x5B\x83\x80\x8F\x49\x97\xB9";
-/* Shift_JIS: セーブしました */
-static const char g_notice_saved[] =
-    "\x83\x5A\x81\x5B\x83\x75\x82\xB5\x82\xDC\x82\xB5\x82\xBD";
-
-static const char *g_save_menu_items[SAVE_MENU_ITEM_COUNT] = {
-    g_save_menu_1, g_save_menu_2, g_save_menu_3, g_menu_back
-};
-static const char *g_load_menu_items[SAVE_MENU_ITEM_COUNT] = {
-    g_load_menu_1, g_load_menu_2, g_load_menu_3, g_menu_back
-};
-static const char *g_system_menu_items[SYSTEM_MENU_ITEM_COUNT] = {
-    g_system_menu_save,
-    g_system_menu_load,
-    g_system_menu_title,
-    g_system_menu_exit,
-    g_system_menu_cancel
-};
-
-
-
 /* 関数宣言部 */
 static int input_wait_key(void);
 static void ui_redraw_current_scene_from_state(void);
@@ -166,7 +126,6 @@ static void ui_draw_current_stands(enum StandId left_stand,
                                    enum FaceId left_face,
                                    enum StandId right_stand,
                                    enum FaceId right_face);
-static int show_selection_menu(const char *const *items, int item_count);
 static int input_wait_choice_jis(int choice_count, int allow_save_load)
     __attribute__((noinline,optimize("O0")));
 static void reset_choice_lines(void);
@@ -189,16 +148,7 @@ static void ui_refresh_right_stand_only_wipe(const char *bg_name,
 static void restore_palette_after_load(void);
 static void restore_scene_after_load(void);
 static void request_loaded_game_resume(void);
-static void ui_show_notice(const char *message);
-static void show_save_menu(void);
-static int show_load_menu(void);
-static enum SystemAction show_system_menu(void);
-static int open_system_menu(void);
-static int open_system_menu_from_choice(int choice_count, int selected,
-                                        long *mouse_accum_x,
-                                        long *mouse_accum_y);
 static void app_cleanup(void);
-static int handle_load_hotkey(uint8_t ch);
 
 // マウス関連
 static int input_key_available(void);
@@ -1399,82 +1349,6 @@ static void request_loaded_game_resume(void)
     g_request_script_resume = 1;
 }
 
-static int handle_load_hotkey(uint8_t ch)
-{
-    (void)ch;
-
-    if (show_load_menu()) {
-        restore_scene_after_load();
-        request_loaded_game_resume();
-        return 1;
-    }
-
-    return 0;
-}
-
-
-
-static void ui_show_notice(const char *message)
-{
-    static unsigned char notice_fonts[MAX_CHOICE_CHARS][32];
-    static const unsigned char *line_fonts[MAX_CHOICE_CHARS];
-    uint16_t message_jis[MAX_CHOICE_CHARS];
-    uint8_t ch;
-    int message_len;
-    int i;
-    int width;
-    int x0;
-    int y0;
-    int x1;
-    int y1;
-
-    if (message == 0 || message[0] == '\0') {
-        return;
-    }
-
-    message_len = convert_sjis_string_to_jis_array(
-        (const unsigned char *)message,
-        message_jis,
-        MAX_CHOICE_CHARS);
-    if (message_len <= 0) {
-        return;
-    }
-
-    width = message_len * 16 + 32;
-    x0 = (640 - width) / 2;
-    x1 = x0 + width - 1;
-    y0 = 176;
-    y1 = 223;
-
-    graph98_boxfill(x0, y0, x1, y1, 0);
-    graph98_rect(x0, y0, x1, y1, 15);
-
-    for (i = 0; i < message_len; ++i) {
-        get_kanji_font(message_jis[i], notice_fonts[i]);
-        line_fonts[i] = notice_fonts[i];
-    }
-
-    draw_jis_string(x0 + 16, y0 + 16, line_fonts, message_len);
-
-    for (;;) {
-        if (g_mouse_available && mouse98_left_pressed()) {
-            mouse98_wait_left_release();
-            break;
-        }
-
-        if (!input_key_available()) {
-            continue;
-        }
-
-        ch = input_read_key(0);
-        if (ch == 0x0D) {
-            break;
-        }
-    }
-
-    ui_redraw_current_scene_from_state();
-}
-
 // スクリプト再生関数
 static void run_script_ascii(void)
 {
@@ -1535,118 +1409,6 @@ static void ui_draw_current_stands(enum StandId left_stand,
 {
     ui_draw_stand(left_stand, left_face, STAND_LEFT_X, STAND_Y, 0);
     ui_draw_stand(right_stand, right_face, STAND_RIGHT_X, STAND_Y, 1);
-}
-
-static int show_selection_menu(const char *const *items, int item_count)
-{
-    int i;
-
-    if (items == 0 || item_count < 1 || item_count > MAX_CHOICE_ITEMS) {
-        return 0;
-    }
-
-    reset_choice_lines();
-
-    for (i = 0; i < item_count; ++i) {
-        store_choice_line(i, items[i]);
-    }
-
-    return input_wait_choice_jis(item_count, 0);
-}
-
-static void show_save_menu(void)
-{
-    int selected;
-    const char *filename;
-
-    selected = show_selection_menu(g_save_menu_items, SAVE_MENU_ITEM_COUNT);
-    if (selected >= 1 && selected <= SAVE_SLOT_COUNT) {
-        filename = save_get_slot_file(selected - 1);
-        if (save_game_state(filename, &g_state, g_flags)) {
-            if (g_fm_se_loaded) {
-                pmd_play_fm_se(1);
-            }
-            ui_show_notice(g_notice_saved);
-        }
-    }
-}
-
-static int show_load_menu(void)
-{
-    int selected;
-    const char *filename;
-
-    selected = show_selection_menu(g_load_menu_items, SAVE_MENU_ITEM_COUNT);
-    if (selected >= 1 && selected <= SAVE_SLOT_COUNT) {
-        filename = save_get_slot_file(selected - 1);
-        return load_game_state(filename, &g_state, g_flags);
-    }
-
-    return 0;
-}
-
-static enum SystemAction show_system_menu(void)
-{
-    int selected;
-
-    selected = show_selection_menu(g_system_menu_items,
-                                   SYSTEM_MENU_ITEM_COUNT);
-    if (selected == 1) {
-        show_save_menu();
-        return SYSTEM_ACTION_NONE;
-    }
-
-    if (selected == 2) {
-        handle_load_hotkey(0);
-        return SYSTEM_ACTION_NONE;
-    }
-
-    if (selected == 3) {
-        if (g_pmd_available) {
-            pmd_stop_music();
-        }
-        return SYSTEM_ACTION_TITLE;
-    }
-
-    if (selected == 4) {
-        return SYSTEM_ACTION_EXIT;
-    }
-
-    return SYSTEM_ACTION_NONE;
-}
-
-static int open_system_menu(void)
-{
-    g_system_action = show_system_menu();
-    if (g_request_script_resume ||
-        g_system_action != SYSTEM_ACTION_NONE) {
-        return 1;
-    }
-
-    return 0;
-}
-
-static int open_system_menu_from_choice(int choice_count, int selected,
-                                        long *mouse_accum_x,
-                                        long *mouse_accum_y)
-{
-    memcpy(g_choice_saved_jis, g_choice_work_jis,
-           sizeof(g_choice_saved_jis));
-    memcpy(g_choice_saved_lens, g_choice_work_lens,
-           sizeof(g_choice_saved_lens));
-
-    if (open_system_menu()) {
-        return 1;
-    }
-
-    memcpy(g_choice_work_jis, g_choice_saved_jis,
-           sizeof(g_choice_work_jis));
-    memcpy(g_choice_work_lens, g_choice_saved_lens,
-           sizeof(g_choice_work_lens));
-    *mouse_accum_x = 0;
-    *mouse_accum_y = 0;
-    ui_draw_choice_jis(choice_count, selected);
-    return 0;
 }
 
 static void app_cleanup(void)
@@ -1809,6 +1571,7 @@ int main(void)
     enum GameResult game_result;
     TitleContext title_context;
     ScriptContext script_context;
+    MenuContext menu_context;
 
         debug_log_init();
         debug_log("ADV98 START");
@@ -1847,6 +1610,30 @@ int main(void)
         graph98_apply_adv_palette();
     }
 
+    menu_context.state = &g_state;
+    menu_context.flags = g_flags;
+    menu_context.pmd_available = &g_pmd_available;
+    menu_context.fm_se_loaded = &g_fm_se_loaded;
+    menu_context.mouse_available = &g_mouse_available;
+    menu_context.request_script_resume = &g_request_script_resume;
+    menu_context.system_action = &g_system_action;
+    menu_context.choice_work_jis = (uint16_t *)g_choice_work_jis;
+    menu_context.choice_saved_jis = (uint16_t *)g_choice_saved_jis;
+    menu_context.choice_jis_bytes = sizeof(g_choice_work_jis);
+    menu_context.choice_work_lens = g_choice_work_lens;
+    menu_context.choice_saved_lens = g_choice_saved_lens;
+    menu_context.choice_lens_bytes = sizeof(g_choice_work_lens);
+    menu_context.reset_choice_lines = reset_choice_lines;
+    menu_context.store_choice_line = store_choice_line;
+    menu_context.wait_choice = input_wait_choice_jis;
+    menu_context.draw_choice_jis = ui_draw_choice_jis;
+    menu_context.key_available = input_key_available;
+    menu_context.read_key = input_read_key;
+    menu_context.redraw_current_scene_from_state =
+        ui_redraw_current_scene_from_state;
+    menu_context.restore_scene_after_load = restore_scene_after_load;
+    menu_context.request_loaded_game_resume = request_loaded_game_resume;
+    menu_init(&menu_context);
 
     for (;;) {
         g_system_action = SYSTEM_ACTION_NONE;

@@ -87,8 +87,6 @@ static void ui_hide_message_window_until_resume(void);
 static void ui_draw_wait_mark(int x, int y, unsigned char color);
 static void text98_hide_cursor(void);
 static void text98_clear_screen(void);
-static int input_wait_choice_cursor(const struct Message *msg,
-                                    const char *current_bg_name);
 static void ui_draw_background(const char *bg_name);
 static void ui_draw_background_center_wipe(const char *bg_name);
 static void ui_draw_message_window(void);
@@ -952,97 +950,6 @@ static void ui_hide_message_window_until_resume(void)
         ch = input_read_key(0);
         if (ch == 0x0D) {
             break;
-        }
-    }
-}
-
-
-/*
- * '1' または '2' が押されるまで待ちます。
- *
- * 今回の選択肢は 2 個だけなので、
- * それ以外のキーは無視して待ち続けます。
- * 
- * 注意！　これは古い関数で使われていません！
- * 　input_wait_choice_jis
- * を使用しています。
- */
-static int input_wait_choice_cursor(const struct Message *msg,
-                                    const char *current_bg_name)
-{
-    uint8_t ch;
-    int i;
-    int copy_len;
-    int selected;
-    int next;
-
-    for (i = 0; i < MAX_CHOICE_ITEMS; ++i) {
-        g_choice_work_lens[i] = 0;
-    }
-
-    copy_len = msg->choice1_len;
-    if (copy_len > MAX_CHOICE_CHARS) {
-        copy_len = MAX_CHOICE_CHARS;
-    }
-    for (i = 0; i < copy_len; ++i) {
-        g_choice_work_jis[0][i] = msg->choice1[i];
-    }
-    g_choice_work_lens[0] = copy_len;
-
-    copy_len = msg->choice2_len;
-    if (copy_len > MAX_CHOICE_CHARS) {
-        copy_len = MAX_CHOICE_CHARS;
-    }
-    for (i = 0; i < copy_len; ++i) {
-        g_choice_work_jis[1][i] = msg->choice2[i];
-    }
-    g_choice_work_lens[1] = copy_len;
-
-    selected = 1;
-
-    ui_draw_background(current_bg_name);
-    ui_draw_stands_for_message(msg);
-
-    for (;;) {
-        ui_draw_choice_jis(2, selected);
-
-        __asm__ __volatile__(
-            "movb $0x08, %%ah\n\t"
-            "int $0x21\n\t"
-            "movb %%al, %0"
-            : "=rm"(ch)
-            :
-            : "ax", "cc", "memory");
-
-        /* Enter で決定 */
-        if (ch == 0x0D) {
-            return selected;
-        }
-
-        next = selected;
-
-        if (ch == 0x0B || ch == 'W' || ch == 'w' || ch == '8') {
-            next = selected - CHOICE_COLUMNS;
-        }
-
-        if (ch == 0x0A || ch == 'S' || ch == 's' || ch == '2') {
-            next = selected + CHOICE_COLUMNS;
-        }
-
-        if (ch == 0x08 || ch == 'A' || ch == 'a' || ch == '4') {
-            if ((selected - 1) % CHOICE_COLUMNS != 0) {
-                next = selected - 1;
-            }
-        }
-
-        if (ch == 0x0C || ch == 'D' || ch == 'd' || ch == '6') {
-            if ((selected - 1) % CHOICE_COLUMNS != CHOICE_COLUMNS - 1) {
-                next = selected + 1;
-            }
-        }
-
-        if (next >= 1 && next <= 2) {
-            selected = next;
         }
     }
 }

@@ -9,6 +9,7 @@
 #include "debug.h"
 #include "game_state.h"
 #include "menu.h"
+#include "input.h"
 
 
 #include <stdint.h>
@@ -34,18 +35,6 @@ struct Message;
 #define MAX_CHOICE_CHARS 64
 #define MAX_CHOICE_DRAW_CHARS 8
 #define CHOICE_COLUMNS 2
-#define MOUSE_CHOICE_MOTION_THRESHOLD 16
-#define CHOICE_RESULT_LOAD_RESUME 0
-#define KEY_CODE_ESCAPE 0x00
-#define KEY_CODE_CURSOR_UP 0x3A
-#define KEY_CODE_CURSOR_LEFT 0x3B
-#define KEY_CODE_CURSOR_RIGHT 0x3C
-#define KEY_CODE_CURSOR_DOWN 0x3D
-#define KEY_CODE_NUMPAD_8 0x43
-#define KEY_CODE_NUMPAD_4 0x46
-#define KEY_CODE_NUMPAD_6 0x48
-#define KEY_CODE_NUMPAD_2 0x4B
-#define KEY_CODE_NUMPAD_0 0x4E
 
 static GameFlag g_flags[MAX_FLAGS];
 static GameState g_state;
@@ -93,7 +82,6 @@ static uint16_t g_choice_saved_jis[MAX_CHOICE_ITEMS][MAX_CHOICE_CHARS];
 static int g_choice_saved_lens[MAX_CHOICE_ITEMS];
 
 /* 関数宣言部 */
-static int input_wait_key(void);
 static void ui_redraw_current_scene_from_state(void);
 static void ui_hide_message_window_until_resume(void);
 static void ui_draw_wait_mark(int x, int y, unsigned char color);
@@ -126,8 +114,6 @@ static void ui_draw_current_stands(enum StandId left_stand,
                                    enum FaceId left_face,
                                    enum StandId right_stand,
                                    enum FaceId right_face);
-static int input_wait_choice_jis(int choice_count, int allow_save_load)
-    __attribute__((noinline,optimize("O0")));
 static void reset_choice_lines(void);
 static void store_choice_line(int index, const char *line) __attribute__((noinline));
 static void trim_leading_spaces(char *str);
@@ -149,12 +135,6 @@ static void restore_palette_after_load(void);
 static void restore_scene_after_load(void);
 static void request_loaded_game_resume(void);
 static void app_cleanup(void);
-
-// マウス関連
-static int input_key_available(void);
-static uint8_t input_read_key(uint8_t *key_code);
-static int input_is_system_menu_key(uint8_t key_code);
-static int input_get_direction(uint8_t ch, uint8_t key_code);
 
 
 static void ui_draw_wait_mark(int x, int y, unsigned char color)
@@ -977,114 +957,6 @@ static void ui_hide_message_window_until_resume(void)
 }
 
 
-/* マウス（左クリック）、Enterキーが押されるまで待ちます。 */
-static int input_wait_key(void)
-{
-    uint8_t ch;
-    uint8_t key_code;
-
-
-    // debug_log("input_wait_key start");
-
-    for (;;) {
-        if (g_mouse_available && mouse98_left_pressed()) {
-            mouse98_wait_left_release();
-            return 1;
-        }
-
-        if (g_mouse_available && mouse98_right_pressed()) {
-            mouse98_wait_right_release();
-            ch = 0;
-            key_code = KEY_CODE_ESCAPE;
-        } else {
-            if (!input_key_available()) {
-                continue;
-            }
-
-            ch = input_read_key(&key_code);
-        }
-
-        if (input_is_system_menu_key(key_code)) {
-            return open_system_menu();
-        }
-
-        if (ch == 'H' || ch == 'h') {
-            ui_hide_message_window_until_resume();
-            return 0;
-        }
-
-        if (ch == 0x0D) {
-            return 1;  /* Enter */
-        }
-    }
-    // debug_log("input_wait_key done");
-}
-
-// PC-98 キーボード BIOS による入力監視
-static int input_key_available(void)
-{
-    uint8_t available;
-
-    __asm__ __volatile__(
-        "movb $0x01, %%ah\n\t"
-        "int $0x18\n\t"
-        "movb %%bh, %0"
-        : "=rm"(available)
-        :
-        : "ax", "bx", "cc", "memory");
-
-    return available != 0;
-}
-
-// PC-98 キーボード BIOS による文字データとキーコードの読み取り
-static uint8_t input_read_key(uint8_t *key_code)
-{
-    uint16_t key;
-
-    __asm__ __volatile__(
-        "xorb %%ah, %%ah\n\t"
-        "int $0x18\n\t"
-        "movw %%ax, %0"
-        : "=rm"(key)
-        :
-        : "ax", "cc", "memory");
-
-    if (key_code != 0) {
-        *key_code = (uint8_t)(key >> 8);
-    }
-
-    return (uint8_t)key;
-}
-
-static int input_is_system_menu_key(uint8_t key_code)
-{
-    return key_code == KEY_CODE_ESCAPE ||
-           key_code == KEY_CODE_NUMPAD_0;
-}
-
-static int input_get_direction(uint8_t ch, uint8_t key_code)
-{
-    if (key_code == KEY_CODE_CURSOR_UP ||
-        key_code == KEY_CODE_NUMPAD_8 || ch == 0x0B || ch == '8') {
-        return -2;
-    }
-    if (key_code == KEY_CODE_CURSOR_DOWN ||
-        key_code == KEY_CODE_NUMPAD_2 || ch == 0x0A || ch == '2') {
-        return 2;
-    }
-    if (key_code == KEY_CODE_CURSOR_LEFT ||
-        key_code == KEY_CODE_NUMPAD_4 || ch == 0x08 || ch == '4') {
-        return -1;
-    }
-    if (key_code == KEY_CODE_CURSOR_RIGHT ||
-        key_code == KEY_CODE_NUMPAD_6 || ch == 0x0C || ch == '6') {
-        return 1;
-    }
-
-    return 0;
-}
-
-
 /*
  * '1' または '2' が押されるまで待ちます。
  *
@@ -1424,126 +1296,6 @@ static void app_cleanup(void)
 }
 
 
-static int input_wait_choice_jis(int choice_count, int allow_save_load)
-{
-    uint8_t ch;
-    uint8_t key_code;
-    int selected;
-    int next;
-    int mouse_dx;
-    int mouse_dy;
-    long mouse_accum_x;
-    long mouse_accum_y;
-    long mouse_abs_x;
-    long mouse_abs_y;
-    int mouse_direction;
-    int keyboard_direction;
-
-    selected = 1;
-    mouse_accum_x = 0;
-    mouse_accum_y = 0;
-
-    if (g_mouse_available) {
-        mouse98_hide_cursor();
-        mouse98_get_motion(0, 0);
-    }
-
-    ui_draw_choice_jis(choice_count, selected);
-
-    for (;;) {
-        mouse_direction = 0;
-
-        if (g_mouse_available) {
-            if (mouse98_left_pressed()) {
-                mouse98_wait_left_release();
-                return selected;
-            }
-
-            if (allow_save_load && mouse98_right_pressed()) {
-                mouse98_wait_right_release();
-
-                if (open_system_menu_from_choice(choice_count, selected,
-                                                 &mouse_accum_x,
-                                                 &mouse_accum_y)) {
-                    return CHOICE_RESULT_LOAD_RESUME;
-                }
-                continue;
-            }
-
-            mouse98_get_motion(&mouse_dx, &mouse_dy);
-            mouse_accum_x += mouse_dx;
-            mouse_accum_y += mouse_dy;
-            mouse_abs_x = mouse_accum_x >= 0 ? mouse_accum_x : -mouse_accum_x;
-            mouse_abs_y = mouse_accum_y >= 0 ? mouse_accum_y : -mouse_accum_y;
-
-            if (mouse_abs_x >= MOUSE_CHOICE_MOTION_THRESHOLD ||
-                mouse_abs_y >= MOUSE_CHOICE_MOTION_THRESHOLD) {
-                if (mouse_abs_x >= mouse_abs_y) {
-                    mouse_direction = mouse_accum_x > 0 ? 1 : -1;
-                } else {
-                    mouse_direction = mouse_accum_y > 0 ? 2 : -2;
-                }
-            }
-
-            if (mouse_direction != 0) {
-                mouse_accum_x = 0;
-                mouse_accum_y = 0;
-            }
-        }
-
-        next = selected;
-
-        if (mouse_direction == -2) {
-            next = selected - CHOICE_COLUMNS;
-        } else if (mouse_direction == 2) {
-            next = selected + CHOICE_COLUMNS;
-        } else if (mouse_direction == -1) {
-            if ((selected - 1) % CHOICE_COLUMNS != 0) {
-                next = selected - 1;
-            }
-        } else if (mouse_direction == 1) {
-            if ((selected - 1) % CHOICE_COLUMNS != CHOICE_COLUMNS - 1) {
-                next = selected + 1;
-            }
-        } else if (input_key_available()) {
-            ch = input_read_key(&key_code);
-            keyboard_direction = input_get_direction(ch, key_code);
-
-            if (ch == 0x0D) {
-                return selected;
-            }
-
-            if (allow_save_load && input_is_system_menu_key(key_code)) {
-                if (open_system_menu_from_choice(choice_count, selected,
-                                                 &mouse_accum_x,
-                                                 &mouse_accum_y)) {
-                    return CHOICE_RESULT_LOAD_RESUME;
-                }
-                continue;
-            }
-
-            if (keyboard_direction == -2) {
-                next = selected - CHOICE_COLUMNS;
-            } else if (keyboard_direction == 2) {
-                next = selected + CHOICE_COLUMNS;
-            } else if (keyboard_direction == -1) {
-                if ((selected - 1) % CHOICE_COLUMNS != 0) {
-                    next = selected - 1;
-                }
-            } else if (keyboard_direction == 1) {
-                if ((selected - 1) % CHOICE_COLUMNS != CHOICE_COLUMNS - 1) {
-                    next = selected + 1;
-                }
-            }
-        }
-
-        if (next >= 1 && next <= choice_count && next != selected) {
-            selected = next;
-            ui_draw_choice_jis(choice_count, selected);
-        }
-    }
-}
-
 static void reset_choice_lines(void)
 {
     int i;
@@ -1572,6 +1324,7 @@ int main(void)
     TitleContext title_context;
     ScriptContext script_context;
     MenuContext menu_context;
+    InputContext input_context;
 
         debug_log_init();
         debug_log("ADV98 START");
@@ -1627,13 +1380,19 @@ int main(void)
     menu_context.store_choice_line = store_choice_line;
     menu_context.wait_choice = input_wait_choice_jis;
     menu_context.draw_choice_jis = ui_draw_choice_jis;
-    menu_context.key_available = input_key_available;
-    menu_context.read_key = input_read_key;
     menu_context.redraw_current_scene_from_state =
         ui_redraw_current_scene_from_state;
     menu_context.restore_scene_after_load = restore_scene_after_load;
     menu_context.request_loaded_game_resume = request_loaded_game_resume;
     menu_init(&menu_context);
+
+    input_context.mouse_available = &g_mouse_available;
+    input_context.hide_message_window_until_resume =
+        ui_hide_message_window_until_resume;
+    input_context.draw_choice_jis = ui_draw_choice_jis;
+    input_context.open_system_menu = open_system_menu;
+    input_context.open_system_menu_from_choice = open_system_menu_from_choice;
+    input_init(&input_context);
 
     for (;;) {
         g_system_action = SYSTEM_ACTION_NONE;

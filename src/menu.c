@@ -1,6 +1,7 @@
 #include "menu.h"
 
 #include "graph98.h"
+#include "input.h"
 #include "mouse98.h"
 #include "pmd.h"
 #include "save.h"
@@ -122,11 +123,11 @@ void ui_show_notice(const char *message)
             break;
         }
 
-        if (!g_menu.key_available()) {
+        if (!input_key_available()) {
             continue;
         }
 
-        ch = g_menu.read_key(0);
+        ch = input_read_key(0);
         if (ch == 0x0D) {
             break;
         }

@@ -27,8 +27,6 @@ typedef struct {
     void (*store_choice_line)(int index, const char *line);
     int (*wait_choice)(int choice_count, int allow_save_load);
     void (*draw_choice_jis)(int choice_count, int selected);
-    int (*key_available)(void);
-    uint8_t (*read_key)(uint8_t *key_code);
     void (*redraw_current_scene_from_state)(void);
     void (*restore_scene_after_load)(void);
     void (*request_loaded_game_resume)(void);

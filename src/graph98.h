@@ -27,6 +27,8 @@ int graph98_draw_sprite_file_trans(const char *path, int x, int y,
 int graph98_draw_sprite_file_trans_center_wipe(const char *path, int x, int y,
                                                unsigned char transparent_color,
                                                int step_lines);
+int graph98_draw_sprite_file_trans_interlace(const char *path, int x, int y,
+                                             unsigned char transparent_color);
 void graph98_draw_digit(int x, int y, int digit, unsigned char color);
 void graph98_draw_number(int x, int y, int value, unsigned char color);
 void graph98_draw_char(int x, int y, char ch, unsigned char color);

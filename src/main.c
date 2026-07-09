@@ -101,6 +101,8 @@ static void ui_draw_stand(enum StandId stand_id, enum FaceId face_id,
                           int x, int y, int facing_left);
 static void ui_draw_stand_center_wipe(enum StandId stand_id, enum FaceId face_id,
                                       int x, int y, int facing_left);
+static void ui_draw_stand_interlace(enum StandId stand_id, enum FaceId face_id,
+                                    int x, int y, int facing_left);
 static void ui_draw_stands_for_message(const struct Message *msg);
 static void ui_draw_cursor_triangle(int x, int y, unsigned char color);
 static int ui_draw_message_page_jis(const uint16_t *name, int name_len,
@@ -122,12 +124,18 @@ static void ui_refresh_left_stand_only(const char *bg_name,
 static void ui_refresh_left_stand_only_wipe(const char *bg_name,
                                             enum StandId left_stand,
                                             enum FaceId left_face);
+static void ui_refresh_left_stand_only_interlace(const char *bg_name,
+                                                 enum StandId left_stand,
+                                                 enum FaceId left_face);
 static void ui_refresh_right_stand_only(const char *bg_name,
                                         enum StandId right_stand,
                                         enum FaceId right_face);
 static void ui_refresh_right_stand_only_wipe(const char *bg_name,
                                              enum StandId right_stand,
                                              enum FaceId right_face);
+static void ui_refresh_right_stand_only_interlace(const char *bg_name,
+                                                  enum StandId right_stand,
+                                                  enum FaceId right_face);
 
 static void restore_palette_after_load(void);
 static void restore_scene_after_load(void);
@@ -568,6 +576,18 @@ static void ui_refresh_left_stand_only_wipe(const char *bg_name,
     ui_draw_stand_center_wipe(left_stand, left_face, STAND_LEFT_X, STAND_Y, 0);
 }
 
+static void ui_refresh_left_stand_only_interlace(const char *bg_name,
+                                                 enum StandId left_stand,
+                                                 enum FaceId left_face)
+{
+    ui_restore_stand_background_rect(STAND_LEFT_X,
+                                     STAND_Y,
+                                     STAND_LEFT_X + STAND_W - 1,
+                                     STAND_Y + STAND_H - 1,
+                                     bg_name);
+    ui_draw_stand_interlace(left_stand, left_face, STAND_LEFT_X, STAND_Y, 0);
+}
+
 static void ui_refresh_right_stand_only(const char *bg_name,
                                         enum StandId right_stand,
                                         enum FaceId right_face)
@@ -590,6 +610,18 @@ static void ui_refresh_right_stand_only_wipe(const char *bg_name,
                                      STAND_Y + STAND_H - 1,
                                      bg_name);
     ui_draw_stand_center_wipe(right_stand, right_face, STAND_RIGHT_X, STAND_Y, 1);
+}
+
+static void ui_refresh_right_stand_only_interlace(const char *bg_name,
+                                                  enum StandId right_stand,
+                                                  enum FaceId right_face)
+{
+    ui_restore_stand_background_rect(STAND_RIGHT_X,
+                                     STAND_Y,
+                                     STAND_RIGHT_X + STAND_W - 1,
+                                     STAND_Y + STAND_H - 1,
+                                     bg_name);
+    ui_draw_stand_interlace(right_stand, right_face, STAND_RIGHT_X, STAND_Y, 1);
 }
 
 static const char *ui_get_stand_sprite_path(enum StandId stand_id,
@@ -688,6 +720,27 @@ static void ui_draw_stand_center_wipe(enum StandId stand_id, enum FaceId face_id
 
     if (!graph98_draw_sprite_file_trans_center_wipe(sprite_path, x, y, 0, 16)) {
         debug_log("sprite wipe load failed: %s", sprite_path);
+        graph98_boxfill(x + 20, y + 20, x + 180, y + 80, 4);
+        graph98_draw_string(x + 30, y + 45, "SPRITE LOAD NG", 15);
+    }
+}
+
+static void ui_draw_stand_interlace(enum StandId stand_id, enum FaceId face_id,
+                                    int x, int y, int facing_left)
+{
+    const char *sprite_path;
+
+    if (stand_id == STAND_NONE) {
+        return;
+    }
+
+    sprite_path = ui_get_stand_sprite_path(stand_id, face_id, facing_left);
+    if (sprite_path == 0) {
+        return;
+    }
+
+    if (!graph98_draw_sprite_file_trans_interlace(sprite_path, x, y, 0)) {
+        debug_log("sprite interlace load failed: %s", sprite_path);
         graph98_boxfill(x + 20, y + 20, x + 180, y + 80, 4);
         graph98_draw_string(x + 30, y + 45, "SPRITE LOAD NG", 15);
     }
@@ -1328,10 +1381,15 @@ int main(void)
         script_context.draw_background_center_wipe = ui_draw_background_center_wipe;
         script_context.draw_stand = ui_draw_stand;
         script_context.draw_stand_center_wipe = ui_draw_stand_center_wipe;
+        script_context.draw_stand_interlace = ui_draw_stand_interlace;
         script_context.refresh_left_stand_only = ui_refresh_left_stand_only;
         script_context.refresh_left_stand_only_wipe = ui_refresh_left_stand_only_wipe;
+        script_context.refresh_left_stand_only_interlace =
+            ui_refresh_left_stand_only_interlace;
         script_context.refresh_right_stand_only = ui_refresh_right_stand_only;
         script_context.refresh_right_stand_only_wipe = ui_refresh_right_stand_only_wipe;
+        script_context.refresh_right_stand_only_interlace =
+            ui_refresh_right_stand_only_interlace;
         script_context.draw_message_jis = ui_draw_message_jis;
         script_context.reset_choice_lines = reset_choice_lines;
         script_context.store_choice_line = store_choice_line;

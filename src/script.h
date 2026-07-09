@@ -34,18 +34,26 @@ typedef struct {
                        int x, int y, int facing_left);
     void (*draw_stand_center_wipe)(enum StandId stand_id, enum FaceId face_id,
                                    int x, int y, int facing_left);
+    void (*draw_stand_interlace)(enum StandId stand_id, enum FaceId face_id,
+                                 int x, int y, int facing_left);
     void (*refresh_left_stand_only)(const char *bg_name,
                                     enum StandId left_stand,
                                     enum FaceId left_face);
     void (*refresh_left_stand_only_wipe)(const char *bg_name,
                                          enum StandId left_stand,
                                          enum FaceId left_face);
+    void (*refresh_left_stand_only_interlace)(const char *bg_name,
+                                              enum StandId left_stand,
+                                              enum FaceId left_face);
     void (*refresh_right_stand_only)(const char *bg_name,
                                      enum StandId right_stand,
                                      enum FaceId right_face);
     void (*refresh_right_stand_only_wipe)(const char *bg_name,
                                           enum StandId right_stand,
                                           enum FaceId right_face);
+    void (*refresh_right_stand_only_interlace)(const char *bg_name,
+                                               enum StandId right_stand,
+                                               enum FaceId right_face);
     void (*draw_message_jis)(const uint16_t *name, int name_len,
                              const uint16_t *jis_codes, int count);
     void (*reset_choice_lines)(void);

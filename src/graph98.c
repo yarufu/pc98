@@ -1,5 +1,7 @@
 #include "graph98.h"
 
+#include "debug.h"
+
 #include <stdio.h>
 #include <stdint.h>
 
@@ -27,6 +29,11 @@
 
 #define GRAPH98_SPRITE_CHUNK_LINES 32u
 #define GRAPH98_SPRITE_MAX_WIDTH 256u
+#define GRAPH98_SPRITE_INTERLACE_MAX_HEIGHT 300u
+#define GRAPH98_SPRITE_INTERLACE_PERIOD 2u
+#define GRAPH98_SPRITE_INTERLACE_BOTTOM_OFFSET 1u
+#define GRAPH98_SPRITE_INTERLACE_GROUP_LINES 32u
+#define GRAPH98_SPRITE_INTERLACE_SWEEP_LINES 8u
 
 #define GRAPH98_SPRITE_MAGIC_0 'S'
 #define GRAPH98_SPRITE_MAGIC_1 'P'
@@ -1184,6 +1191,245 @@ static int graph98_draw_sprite_file_trans_range(FILE *fp,
 
         done = (uint16_t)(done + chunk_lines);
     }
+
+    return 1;
+}
+
+static void graph98_draw_sprite_buffer_line_trans(const uint8_t *row,
+                                                  const struct graph98_sprite_header *header,
+                                                  int x,
+                                                  int y,
+                                                  uint16_t src_y,
+                                                  unsigned char transparent_color)
+{
+    int dst_y;
+    int src_start;
+    int draw_width;
+    int draw_x;
+
+    dst_y = y + (int)src_y;
+    if (dst_y < 0 || dst_y >= GRAPH98_HEIGHT) {
+        return;
+    }
+
+    src_start = 0;
+    draw_width = (int)header->width;
+    draw_x = x;
+
+    if (draw_x < 0) {
+        src_start = -draw_x;
+        draw_width -= src_start;
+        draw_x = 0;
+    }
+
+    if (draw_x + draw_width > GRAPH98_WIDTH) {
+        draw_width = GRAPH98_WIDTH - draw_x;
+    }
+
+    if (draw_width > 0) {
+        graph98_draw_sprite_line_trans_fast(row,
+                                            src_start,
+                                            draw_width,
+                                            draw_x,
+                                            dst_y,
+                                            transparent_color);
+    }
+}
+
+static int graph98_draw_sprite_file_trans_interlace_range(FILE *fp,
+                                                          const struct graph98_sprite_header *header,
+                                                          uint8_t *buffer,
+                                                          const char *path,
+                                                          int x,
+                                                          int y,
+                                                          uint16_t start_y,
+                                                          uint16_t end_y,
+                                                          uint16_t phase,
+                                                          int reverse,
+                                                          unsigned char transparent_color)
+{
+    uint16_t lines;
+    unsigned long pos;
+
+    if (end_y <= start_y) {
+        return 1;
+    }
+
+    lines = (uint16_t)(end_y - start_y);
+    pos = 9UL + (unsigned long)start_y * (unsigned long)header->width;
+    if (fseek(fp, pos, SEEK_SET) != 0) {
+        debug_log("interlace fseek failed: %s start_y=%u pos=%lu",
+                  path, (unsigned)start_y, pos);
+        return 0;
+    }
+
+    if (fread(buffer, header->width, lines, fp) != lines) {
+        debug_log("interlace fread failed: %s start_y=%u lines=%u width=%u",
+                  path,
+                  (unsigned)start_y,
+                  (unsigned)lines,
+                  (unsigned)header->width);
+        return 0;
+    }
+
+    if (reverse) {
+        int line;
+
+        for (line = (int)lines - 1; line >= 0; --line) {
+            uint16_t src_y;
+            uint8_t *row;
+
+            src_y = (uint16_t)(start_y + (uint16_t)line);
+            if ((src_y % GRAPH98_SPRITE_INTERLACE_PERIOD) != phase) {
+                continue;
+            }
+
+            row = buffer + (uint16_t)(header->width * (uint16_t)line);
+            graph98_draw_sprite_buffer_line_trans(row,
+                                                  header,
+                                                  x,
+                                                  y,
+                                                  src_y,
+                                                  transparent_color);
+        }
+    } else {
+        uint16_t line;
+
+        for (line = 0; line < lines; ++line) {
+            uint16_t src_y;
+            uint8_t *row;
+
+            src_y = (uint16_t)(start_y + line);
+            if ((src_y % GRAPH98_SPRITE_INTERLACE_PERIOD) != phase) {
+                continue;
+            }
+
+            row = buffer + (uint16_t)(header->width * line);
+            graph98_draw_sprite_buffer_line_trans(row,
+                                                  header,
+                                                  x,
+                                                  y,
+                                                  src_y,
+                                                  transparent_color);
+        }
+    }
+
+    return 1;
+}
+
+int graph98_draw_sprite_file_trans_interlace(const char *path, int x, int y,
+                                             unsigned char transparent_color)
+{
+    static uint8_t buffer[GRAPH98_SPRITE_MAX_WIDTH *
+                          GRAPH98_SPRITE_INTERLACE_GROUP_LINES];
+    struct graph98_sprite_header header;
+    FILE *fp;
+    uint16_t sweep_y;
+
+    fp = fopen(path, "rb");
+    if (fp == 0) {
+        debug_log("interlace fopen failed: %s", path);
+        return 0;
+    }
+
+    if (!graph98_read_sprite_header(fp, &header)) {
+        debug_log("interlace header read failed: %s", path);
+        fclose(fp);
+        return 0;
+    }
+
+    if (header.magic[0] != GRAPH98_SPRITE_MAGIC_0 ||
+        header.magic[1] != GRAPH98_SPRITE_MAGIC_1 ||
+        header.magic[2] != GRAPH98_SPRITE_MAGIC_2 ||
+        header.magic[3] != GRAPH98_SPRITE_MAGIC_3) {
+        debug_log("interlace header magic invalid: %s %u %u %u %u",
+                  path,
+                  (unsigned)header.magic[0],
+                  (unsigned)header.magic[1],
+                  (unsigned)header.magic[2],
+                  (unsigned)header.magic[3]);
+        fclose(fp);
+        return 0;
+    }
+
+    if (header.version != GRAPH98_SPRITE_VERSION) {
+        debug_log("interlace header version invalid: %s version=%u",
+                  path, (unsigned)header.version);
+        fclose(fp);
+        return 0;
+    }
+
+    if (header.width == 0 ||
+        header.height == 0 ||
+        header.width > GRAPH98_SPRITE_MAX_WIDTH ||
+        header.height > GRAPH98_SPRITE_INTERLACE_MAX_HEIGHT) {
+        debug_log("interlace sprite size invalid: %s width=%u height=%u",
+                  path, (unsigned)header.width, (unsigned)header.height);
+        fclose(fp);
+        return 0;
+    }
+
+    transparent_color &= 0x0Fu;
+
+    sweep_y = 0;
+    while (sweep_y < header.height) {
+        uint16_t top_start;
+        uint16_t top_end;
+        uint16_t bottom_start;
+        uint16_t bottom_end;
+
+        top_start = sweep_y;
+        top_end = (uint16_t)(sweep_y + GRAPH98_SPRITE_INTERLACE_GROUP_LINES);
+        if (top_end > header.height) {
+            top_end = header.height;
+        }
+
+        if (sweep_y + GRAPH98_SPRITE_INTERLACE_GROUP_LINES >=
+            header.height) {
+            bottom_start = 0;
+        } else {
+            bottom_start = (uint16_t)(header.height -
+                                      sweep_y -
+                                      GRAPH98_SPRITE_INTERLACE_GROUP_LINES);
+        }
+        bottom_end = (uint16_t)(header.height - sweep_y);
+
+        if (!graph98_draw_sprite_file_trans_interlace_range(fp,
+                                                            &header,
+                                                            buffer,
+                                                            path,
+                                                            x,
+                                                            y,
+                                                            top_start,
+                                                            top_end,
+                                                            0u,
+                                                            0,
+                                                            transparent_color)) {
+            fclose(fp);
+            return 0;
+        }
+
+        if (!graph98_draw_sprite_file_trans_interlace_range(
+                fp,
+                &header,
+                buffer,
+                path,
+                x,
+                y,
+                bottom_start,
+                bottom_end,
+                GRAPH98_SPRITE_INTERLACE_BOTTOM_OFFSET,
+                1,
+                transparent_color)) {
+            fclose(fp);
+            return 0;
+        }
+
+        graph98_wait_vsync();
+        sweep_y = (uint16_t)(sweep_y + GRAPH98_SPRITE_INTERLACE_SWEEP_LINES);
+    }
+
+    fclose(fp);
 
     return 1;
 }

@@ -39,6 +39,8 @@ typedef struct {
     int bg_wipe_pending;
     int left_wipe_pending;
     int right_wipe_pending;
+    int left_interlace_pending;
+    int right_interlace_pending;
 } SceneRenderState;
 
 // 改行削除関数
@@ -389,7 +391,9 @@ static void process_command_line(const ScriptContext *ctx,
 
 
 
-    if (strcmp(cmd, "#left") == 0 || strcmp(cmd, "#leftwipe") == 0) {
+    if (strcmp(cmd, "#left") == 0 ||
+        strcmp(cmd, "#leftwipe") == 0 ||
+        strcmp(cmd, "#leftinterlace") == 0) {
         if (count >= 2) {
             *left_stand = parse_stand_id(arg1);
         }
@@ -401,7 +405,9 @@ static void process_command_line(const ScriptContext *ctx,
         return;
     }
 
-    if (strcmp(cmd, "#right") == 0 || strcmp(cmd, "#rightwipe") == 0) {
+    if (strcmp(cmd, "#right") == 0 ||
+        strcmp(cmd, "#rightwipe") == 0 ||
+        strcmp(cmd, "#rightinterlace") == 0) {
         if (count >= 2) {
             *right_stand = parse_stand_id(arg1);
         }
@@ -689,8 +695,10 @@ static enum CommandResult handle_display_command(const ScriptContext *ctx,
         strcmp(command->cmd, "#bgwipe") != 0 &&
         strcmp(command->cmd, "#left") != 0 &&
         strcmp(command->cmd, "#leftwipe") != 0 &&
+        strcmp(command->cmd, "#leftinterlace") != 0 &&
         strcmp(command->cmd, "#right") != 0 &&
         strcmp(command->cmd, "#rightwipe") != 0 &&
+        strcmp(command->cmd, "#rightinterlace") != 0 &&
         strcmp(command->cmd, "#msgbox") != 0) {
         return COMMAND_NOT_HANDLED;
     }
@@ -710,12 +718,22 @@ static enum CommandResult handle_display_command(const ScriptContext *ctx,
             render->bg_wipe_pending = 0;
         } else if (strcmp(command->cmd, "#leftwipe") == 0) {
             render->left_wipe_pending = 1;
+            render->left_interlace_pending = 0;
+        } else if (strcmp(command->cmd, "#leftinterlace") == 0) {
+            render->left_wipe_pending = 0;
+            render->left_interlace_pending = 1;
         } else if (strcmp(command->cmd, "#left") == 0) {
             render->left_wipe_pending = 0;
+            render->left_interlace_pending = 0;
         } else if (strcmp(command->cmd, "#rightwipe") == 0) {
             render->right_wipe_pending = 1;
+            render->right_interlace_pending = 0;
+        } else if (strcmp(command->cmd, "#rightinterlace") == 0) {
+            render->right_wipe_pending = 0;
+            render->right_interlace_pending = 1;
         } else if (strcmp(command->cmd, "#right") == 0) {
             render->right_wipe_pending = 0;
+            render->right_interlace_pending = 0;
         }
     }
 
@@ -732,7 +750,9 @@ static enum CommandResult handle_display_command(const ScriptContext *ctx,
                state->right_stand != old_right_stand ||
                state->right_face != old_right_face ||
                render->left_wipe_pending ||
-               render->right_wipe_pending) {
+               render->left_interlace_pending ||
+               render->right_wipe_pending ||
+               render->right_interlace_pending) {
         render->stand_dirty = 1;
     }
 
@@ -751,14 +771,20 @@ static void draw_full_scene(const ScriptContext *ctx,
     } else {
         ctx->draw_background(state->bg_name);
     }
-    if (render->left_wipe_pending) {
+    if (render->left_interlace_pending) {
+        ctx->draw_stand_interlace(state->left_stand, state->left_face,
+                                  STAND_LEFT_X, STAND_Y, 0);
+    } else if (render->left_wipe_pending) {
         ctx->draw_stand_center_wipe(state->left_stand, state->left_face,
                                     STAND_LEFT_X, STAND_Y, 0);
     } else {
         ctx->draw_stand(state->left_stand, state->left_face,
                         STAND_LEFT_X, STAND_Y, 0);
     }
-    if (render->right_wipe_pending) {
+    if (render->right_interlace_pending) {
+        ctx->draw_stand_interlace(state->right_stand, state->right_face,
+                                  STAND_RIGHT_X, STAND_Y, 1);
+    } else if (render->right_wipe_pending) {
         ctx->draw_stand_center_wipe(state->right_stand, state->right_face,
                                     STAND_RIGHT_X, STAND_Y, 1);
     } else {
@@ -788,7 +814,9 @@ static void redraw_scene_if_needed(const ScriptContext *ctx,
         render->stand_dirty = 0;
         render->bg_wipe_pending = 0;
         render->left_wipe_pending = 0;
+        render->left_interlace_pending = 0;
         render->right_wipe_pending = 0;
+        render->right_interlace_pending = 0;
         return;
     }
 
@@ -800,7 +828,11 @@ static void redraw_scene_if_needed(const ScriptContext *ctx,
          state->left_face != render->last_left_face) &&
         state->right_stand == render->last_right_stand &&
         state->right_face == render->last_right_face) {
-        if (render->left_wipe_pending) {
+        if (render->left_interlace_pending) {
+            ctx->refresh_left_stand_only_interlace(state->bg_name,
+                                                   state->left_stand,
+                                                   state->left_face);
+        } else if (render->left_wipe_pending) {
             ctx->refresh_left_stand_only_wipe(state->bg_name,
                                               state->left_stand,
                                               state->left_face);
@@ -815,7 +847,11 @@ static void redraw_scene_if_needed(const ScriptContext *ctx,
                state->left_face == render->last_left_face &&
                (state->right_stand != render->last_right_stand ||
                 state->right_face != render->last_right_face)) {
-        if (render->right_wipe_pending) {
+        if (render->right_interlace_pending) {
+            ctx->refresh_right_stand_only_interlace(state->bg_name,
+                                                    state->right_stand,
+                                                    state->right_face);
+        } else if (render->right_wipe_pending) {
             ctx->refresh_right_stand_only_wipe(state->bg_name,
                                                state->right_stand,
                                                state->right_face);
@@ -833,7 +869,9 @@ static void redraw_scene_if_needed(const ScriptContext *ctx,
 
     render->stand_dirty = 0;
     render->left_wipe_pending = 0;
+    render->left_interlace_pending = 0;
     render->right_wipe_pending = 0;
+    render->right_interlace_pending = 0;
 }
 
 // 日本語 script.txt を再生する関数
@@ -856,7 +894,10 @@ enum GameResult run_script_sjis(const ScriptContext *ctx)
     if (ctx == 0 || ctx->state == 0 || ctx->flags == 0 ||
         ctx->request_scene_redraw == 0 ||
         ctx->request_script_resume == 0 ||
-        ctx->system_action == 0) {
+        ctx->system_action == 0 ||
+        ctx->draw_stand_interlace == 0 ||
+        ctx->refresh_left_stand_only_interlace == 0 ||
+        ctx->refresh_right_stand_only_interlace == 0) {
         return GAME_RESULT_EXIT_TO_DOS;
     }
 
@@ -865,7 +906,9 @@ enum GameResult run_script_sjis(const ScriptContext *ctx)
     render.stand_dirty = 0;
     render.bg_wipe_pending = 0;
     render.left_wipe_pending = 0;
+    render.left_interlace_pending = 0;
     render.right_wipe_pending = 0;
+    render.right_interlace_pending = 0;
     script_line = 0;
 
     current_name[0] = '\0';
@@ -900,7 +943,9 @@ enum GameResult run_script_sjis(const ScriptContext *ctx)
             render.stand_dirty = 0;
             render.bg_wipe_pending = 0;
             render.left_wipe_pending = 0;
+            render.left_interlace_pending = 0;
             render.right_wipe_pending = 0;
+            render.right_interlace_pending = 0;
             *ctx->request_scene_redraw = 0;
             *ctx->request_script_resume = 0;
         }
@@ -928,7 +973,8 @@ enum GameResult run_script_sjis(const ScriptContext *ctx)
              *   control:  #label, #jump, #call, #return
              *   flags:    #setnum, #ifeq
              *   external: #pal, #bgm
-             *   display:  #bgwipe, #leftwipe, #rightwipe
+             *   display:  #bgwipe, #leftwipe, #rightwipe,
+             *             #leftinterlace, #rightinterlace
              * Other supported commands are routed through the same groups.
              */
 

@@ -1,7 +1,7 @@
 #pal adv.pal
 #bgwipe class
 #bgm PLAY.M
-#rightwipe character02 normal
+#rightinterlace character02 normal
 
 [健一]
 ここ、静かだな
@@ -231,7 +231,7 @@
 []
 教室のドアが開いた。
 
-#leftwipe character01 normal
+#leftinterlace character01 normal
 
 [サンプル子]
 呼ばれたので来ました

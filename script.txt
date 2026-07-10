@@ -1,5 +1,5 @@
 #pal adv.pal
-#bgwipe class
+#bginterlace class
 #bgm PLAY.M
 #rightinterlace character02 normal
 

@@ -34,6 +34,10 @@
 #define GRAPH98_G98_MAGIC_3 'B'
 #define GRAPH98_G98_VERSION 1u
 #define GRAPH98_G98_CHUNK_LINES 32u
+#define GRAPH98_G98_INTERLACE_PERIOD 2u
+#define GRAPH98_G98_INTERLACE_BOTTOM_OFFSET 1u
+#define GRAPH98_G98_INTERLACE_GROUP_LINES 32u
+#define GRAPH98_G98_INTERLACE_SWEEP_LINES 8u
 
 #define GRAPH98_SPRITE_CHUNK_LINES 32u
 #define GRAPH98_SPRITE_MAX_WIDTH 256u
@@ -42,6 +46,25 @@
 #define GRAPH98_SPRITE_INTERLACE_BOTTOM_OFFSET 1u
 #define GRAPH98_SPRITE_INTERLACE_GROUP_LINES 32u
 #define GRAPH98_SPRITE_INTERLACE_SWEEP_LINES 8u
+
+#define GRAPH98_IMAGE_WORK_SIZE \
+    (GRAPH98_SPRITE_MAX_WIDTH * GRAPH98_SPRITE_CHUNK_LINES)
+
+/* Image loaders are non-reentrant and share this buffer sequentially. */
+static uint8_t graph98_image_work[GRAPH98_IMAGE_WORK_SIZE];
+
+_Static_assert(GRAPH98_IMAGE_WORK_SIZE == 8192u,
+               "image work buffer must be 8 KB");
+_Static_assert(GRAPH98_BYTES_PER_LINE * GRAPH98_G98_CHUNK_LINES <=
+                   GRAPH98_IMAGE_WORK_SIZE,
+               "G98 chunk exceeds image work buffer");
+_Static_assert(GRAPH98_BYTES_PER_LINE * GRAPH98_G98_INTERLACE_GROUP_LINES <=
+                   GRAPH98_IMAGE_WORK_SIZE,
+               "G98 interlace group exceeds image work buffer");
+_Static_assert(GRAPH98_SPRITE_MAX_WIDTH *
+                   GRAPH98_SPRITE_INTERLACE_GROUP_LINES <=
+                   GRAPH98_IMAGE_WORK_SIZE,
+               "sprite interlace group exceeds image work buffer");
 
 #define GRAPH98_SPRITE_MAGIC_0 'S'
 #define GRAPH98_SPRITE_MAGIC_1 'P'
@@ -251,7 +274,6 @@ void graph98_apply_adv_palette(void)
 
 static int graph98_copy_plane_from_file(FILE *fp, volatile uint8_t __far *plane)
 {
-    static uint8_t buffer[GRAPH98_BYTES_PER_LINE * GRAPH98_G98_CHUNK_LINES];
     uint16_t y;
 
     y = 0;
@@ -267,13 +289,13 @@ static int graph98_copy_plane_from_file(FILE *fp, volatile uint8_t __far *plane)
         }
 
         bytes_to_read = (uint16_t)(GRAPH98_BYTES_PER_LINE * lines);
-        if (fread(buffer, 1u, bytes_to_read, fp) != bytes_to_read) {
+        if (fread(graph98_image_work, 1u, bytes_to_read, fp) != bytes_to_read) {
             return 0;
         }
 
         offset = (uint16_t)(y * GRAPH98_BYTES_PER_LINE);
         for (i = 0; i < bytes_to_read; ++i) {
-            plane[offset + i] = buffer[i];
+            plane[offset + i] = graph98_image_work[i];
         }
 
         y = (uint16_t)(y + lines);
@@ -699,6 +721,22 @@ static int graph98_read_g98_header(FILE *fp, struct graph98_g98_header *header)
     return 1;
 }
 
+static int __attribute__((noinline, optimize("Os")))
+graph98_is_valid_g98_header(const struct graph98_g98_header *header)
+{
+    return header->magic[0] == GRAPH98_G98_MAGIC_0 &&
+           header->magic[1] == GRAPH98_G98_MAGIC_1 &&
+           header->magic[2] == GRAPH98_G98_MAGIC_2 &&
+           header->magic[3] == GRAPH98_G98_MAGIC_3 &&
+           header->width == GRAPH98_WIDTH &&
+           header->height == GRAPH98_HEIGHT &&
+           header->version == GRAPH98_G98_VERSION &&
+           header->plane_order[0] == 'B' &&
+           header->plane_order[1] == 'R' &&
+           header->plane_order[2] == 'G' &&
+           header->plane_order[3] == 'I';
+}
+
 static int graph98_read_sprite_header(FILE *fp,
                                       struct graph98_sprite_header *header)
 {
@@ -770,28 +808,7 @@ int graph98_load_g98(const char *path)
 
 
 
-    if (header.magic[0] != GRAPH98_G98_MAGIC_0 ||
-        header.magic[1] != GRAPH98_G98_MAGIC_1 ||
-        header.magic[2] != GRAPH98_G98_MAGIC_2 ||
-        header.magic[3] != GRAPH98_G98_MAGIC_3) {
-        fclose(fp);
-        return 0;
-    }
-
-    if (header.width != GRAPH98_WIDTH || header.height != GRAPH98_HEIGHT) {
-        fclose(fp);
-        return 0;
-    }
-
-    if (header.version != GRAPH98_G98_VERSION) {
-        fclose(fp);
-        return 0;
-    }
-
-    if (header.plane_order[0] != 'B' ||
-        header.plane_order[1] != 'R' ||
-        header.plane_order[2] != 'G' ||
-        header.plane_order[3] != 'I') {
+    if (!graph98_is_valid_g98_header(&header)) {
         fclose(fp);
         return 0;
     }
@@ -826,7 +843,6 @@ static int graph98_copy_plane_rect_from_file(FILE *fp,
                                              int x1,
                                              int y1)
 {
-    static uint8_t row_buffer[GRAPH98_BYTES_PER_LINE];
     int y;
     int byte_x0;
     int byte_x1;
@@ -855,13 +871,15 @@ static int graph98_copy_plane_rect_from_file(FILE *fp,
     for (y = y0; y <= y1; ++y) {
         uint16_t dst_offset;
 
-        if (fread(row_buffer, 1u, GRAPH98_BYTES_PER_LINE, fp) != GRAPH98_BYTES_PER_LINE) {
+        if (fread(graph98_image_work, 1u, GRAPH98_BYTES_PER_LINE, fp) !=
+            GRAPH98_BYTES_PER_LINE) {
             return 0;
         }
 
         dst_offset = (uint16_t)(y * GRAPH98_BYTES_PER_LINE + byte_x0);
         for (i = 0; i < bytes; ++i) {
-            plane[(uint16_t)(dst_offset + i)] = row_buffer[byte_x0 + i];
+            plane[(uint16_t)(dst_offset + i)] =
+                graph98_image_work[byte_x0 + i];
         }
     }
 
@@ -964,17 +982,7 @@ int graph98_load_g98_center_wipe(const char *path, int step_lines)
         return 0;
     }
 
-    if (header.magic[0] != GRAPH98_G98_MAGIC_0 ||
-        header.magic[1] != GRAPH98_G98_MAGIC_1 ||
-        header.magic[2] != GRAPH98_G98_MAGIC_2 ||
-        header.magic[3] != GRAPH98_G98_MAGIC_3 ||
-        header.width != GRAPH98_WIDTH ||
-        header.height != GRAPH98_HEIGHT ||
-        header.version != GRAPH98_G98_VERSION ||
-        header.plane_order[0] != 'B' ||
-        header.plane_order[1] != 'R' ||
-        header.plane_order[2] != 'G' ||
-        header.plane_order[3] != 'I') {
+    if (!graph98_is_valid_g98_header(&header)) {
         fclose(fp);
         return 0;
     }
@@ -1037,13 +1045,173 @@ int graph98_load_g98_center_wipe(const char *path, int step_lines)
     return 1;
 }
 
+static int __attribute__((noinline, optimize("Os")))
+graph98_copy_plane_interlace_range_from_file(
+    FILE *fp,
+    volatile uint8_t __far *plane,
+    unsigned long plane_start,
+    uint16_t start_y,
+    uint16_t end_y,
+    int reverse)
+{
+    uint16_t lines;
+    unsigned long pos;
+    int line;
+    int line_end;
+    int line_step;
+
+    if (end_y <= start_y) {
+        return 1;
+    }
+
+    lines = (uint16_t)(end_y - start_y);
+    if (lines > GRAPH98_G98_INTERLACE_GROUP_LINES) {
+        return 0;
+    }
+
+    pos = plane_start + (unsigned long)start_y * GRAPH98_BYTES_PER_LINE;
+    if (fseek(fp, pos, SEEK_SET) != 0) {
+        return 0;
+    }
+
+    if (fread(graph98_image_work, GRAPH98_BYTES_PER_LINE, lines, fp) != lines) {
+        return 0;
+    }
+
+    /*
+     * 画面高、帯幅、移動量はすべて8の倍数なので、各範囲は偶数Yから
+     * 始まり偶数ライン数になる。正順の0,2,...が画面の偶数ライン、
+     * 逆順の末尾,末尾-2,...が画面の奇数ラインになる。
+     */
+    if (reverse) {
+        line = (int)lines - (int)GRAPH98_G98_INTERLACE_BOTTOM_OFFSET;
+        line_end = -(int)GRAPH98_G98_INTERLACE_BOTTOM_OFFSET;
+        line_step = -(int)GRAPH98_G98_INTERLACE_PERIOD;
+    } else {
+        line = 0;
+        line_end = (int)lines;
+        line_step = (int)GRAPH98_G98_INTERLACE_PERIOD;
+    }
+
+    while (line != line_end) {
+        uint16_t src_y;
+        uint16_t src_offset;
+        uint16_t dst_offset;
+        uint16_t i;
+
+        src_y = (uint16_t)(start_y + (uint16_t)line);
+        src_offset = (uint16_t)((uint16_t)line *
+                                GRAPH98_BYTES_PER_LINE);
+        dst_offset = (uint16_t)(src_y * GRAPH98_BYTES_PER_LINE);
+        for (i = 0; i < GRAPH98_BYTES_PER_LINE; ++i) {
+            plane[(uint16_t)(dst_offset + i)] =
+                graph98_image_work[(uint16_t)(src_offset + i)];
+        }
+        line += line_step;
+    }
+
+    return 1;
+}
+
+int __attribute__((optimize("Os")))
+graph98_load_g98_interlace(const char *path)
+{
+    struct graph98_g98_header header;
+    FILE *fp;
+    unsigned long header_size;
+    unsigned long plane_size;
+    uint16_t sweep_y;
+    int plane_index;
+    volatile uint8_t __far *planes[4];
+
+    fp = fopen(path, "rb");
+    if (fp == 0) {
+        return 0;
+    }
+
+    if (!graph98_read_g98_header(fp, &header)) {
+        fclose(fp);
+        return 0;
+    }
+
+    if (!graph98_is_valid_g98_header(&header)) {
+        fclose(fp);
+        return 0;
+    }
+
+    planes[0] = GRAPH98_VRAM_BLUE;
+    planes[1] = GRAPH98_VRAM_RED;
+    planes[2] = GRAPH98_VRAM_GREEN;
+    planes[3] = GRAPH98_VRAM_INTENS;
+
+    header_size = 13UL;
+    plane_size = (unsigned long)GRAPH98_BYTES_PER_LINE * GRAPH98_HEIGHT;
+    sweep_y = 0;
+
+    while (sweep_y < GRAPH98_HEIGHT) {
+        uint16_t top_start;
+        uint16_t top_end;
+        uint16_t bottom_start;
+        uint16_t bottom_end;
+
+        top_start = sweep_y;
+        top_end = (uint16_t)(sweep_y + GRAPH98_G98_INTERLACE_GROUP_LINES);
+        if (top_end > GRAPH98_HEIGHT) {
+            top_end = GRAPH98_HEIGHT;
+        }
+
+        if (sweep_y + GRAPH98_G98_INTERLACE_GROUP_LINES >= GRAPH98_HEIGHT) {
+            bottom_start = 0;
+        } else {
+            bottom_start = (uint16_t)(GRAPH98_HEIGHT - sweep_y -
+                                      GRAPH98_G98_INTERLACE_GROUP_LINES);
+        }
+        bottom_end = (uint16_t)(GRAPH98_HEIGHT - sweep_y);
+
+        for (plane_index = 0; plane_index < 4; ++plane_index) {
+            unsigned long plane_start;
+
+            plane_start = header_size +
+                          plane_size * (unsigned long)plane_index;
+
+            if (!graph98_copy_plane_interlace_range_from_file(
+                    fp,
+                    planes[plane_index],
+                    plane_start,
+                    top_start,
+                    top_end,
+                    0)) {
+                fclose(fp);
+                return 0;
+            }
+
+            if (!graph98_copy_plane_interlace_range_from_file(
+                    fp,
+                    planes[plane_index],
+                    plane_start,
+                    bottom_start,
+                    bottom_end,
+                    1)) {
+                fclose(fp);
+                return 0;
+            }
+        }
+
+        graph98_wait_vsync();
+        sweep_y = (uint16_t)(sweep_y +
+                             GRAPH98_G98_INTERLACE_SWEEP_LINES);
+    }
+
+    fclose(fp);
+    return 1;
+}
+
 
 int graph98_draw_sprite_file_trans(const char *path, int x, int y,
                                    unsigned char transparent_color)
 {
     struct graph98_sprite_header header;
     FILE *fp;
-    static uint8_t buffer[GRAPH98_SPRITE_MAX_WIDTH * GRAPH98_SPRITE_CHUNK_LINES];
     uint16_t src_y;
 
     fp = fopen(path, "rb");
@@ -1091,7 +1259,8 @@ int graph98_draw_sprite_file_trans(const char *path, int x, int y,
             chunk_lines = GRAPH98_SPRITE_CHUNK_LINES;
         }
 
-        if (fread(buffer, header.width, chunk_lines, fp) != chunk_lines) {
+        if (fread(graph98_image_work, header.width, chunk_lines, fp) !=
+            chunk_lines) {
             fclose(fp);
             return 0;
         }
@@ -1106,7 +1275,7 @@ int graph98_draw_sprite_file_trans(const char *path, int x, int y,
                 continue;
             }
 
-            row = buffer + (uint16_t)(header.width * line);
+            row = graph98_image_work + (uint16_t)(header.width * line);
 
             {
                 int src_start;
@@ -1348,8 +1517,6 @@ static int graph98_draw_sprite_file_trans_interlace_range(FILE *fp,
 int graph98_draw_sprite_file_trans_interlace(const char *path, int x, int y,
                                              unsigned char transparent_color)
 {
-    static uint8_t buffer[GRAPH98_SPRITE_MAX_WIDTH *
-                          GRAPH98_SPRITE_INTERLACE_GROUP_LINES];
     struct graph98_sprite_header header;
     FILE *fp;
     uint16_t sweep_y;
@@ -1424,7 +1591,7 @@ int graph98_draw_sprite_file_trans_interlace(const char *path, int x, int y,
 
         if (!graph98_draw_sprite_file_trans_interlace_range(fp,
                                                             &header,
-                                                            buffer,
+                                                            graph98_image_work,
                                                             path,
                                                             x,
                                                             y,
@@ -1440,7 +1607,7 @@ int graph98_draw_sprite_file_trans_interlace(const char *path, int x, int y,
         if (!graph98_draw_sprite_file_trans_interlace_range(
                 fp,
                 &header,
-                buffer,
+                graph98_image_work,
                 path,
                 x,
                 y,
@@ -1468,7 +1635,6 @@ int graph98_draw_sprite_file_trans_center_wipe(const char *path, int x, int y,
 {
     struct graph98_sprite_header header;
     FILE *fp;
-    static uint8_t buffer[GRAPH98_SPRITE_MAX_WIDTH * GRAPH98_SPRITE_CHUNK_LINES];
     uint16_t revealed;
     uint16_t step;
 
@@ -1515,7 +1681,8 @@ int graph98_draw_sprite_file_trans_center_wipe(const char *path, int x, int y,
             top_lines = gap;
         }
 
-        if (!graph98_draw_sprite_file_trans_range(fp, &header, buffer,
+        if (!graph98_draw_sprite_file_trans_range(fp, &header,
+                                                  graph98_image_work,
                                                   x, y, transparent_color,
                                                   revealed, top_lines)) {
             fclose(fp);
@@ -1530,7 +1697,8 @@ int graph98_draw_sprite_file_trans_center_wipe(const char *path, int x, int y,
 
         if (bottom_lines > 0) {
             bottom_y = (uint16_t)(header.height - revealed - bottom_lines);
-            if (!graph98_draw_sprite_file_trans_range(fp, &header, buffer,
+            if (!graph98_draw_sprite_file_trans_range(fp, &header,
+                                                      graph98_image_work,
                                                       x, y, transparent_color,
                                                       bottom_y, bottom_lines)) {
                 fclose(fp);

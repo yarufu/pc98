@@ -37,6 +37,7 @@ typedef struct {
     int scene_dirty;
     int stand_dirty;
     int bg_wipe_pending;
+    int bg_interlace_pending;
     int left_wipe_pending;
     int right_wipe_pending;
     int left_interlace_pending;
@@ -331,13 +332,14 @@ static enum FaceId parse_face_id(const char *name)
 }
 
 // コマンド行を読む関数
-static void process_command_line(const ScriptContext *ctx,
-                                 const char *line,
-                                 char *bg_name,
-                                 enum StandId *left_stand,
-                                 enum FaceId *left_face,
-                                 enum StandId *right_stand,
-                                 enum FaceId *right_face)
+static void __attribute__((optimize("Os")))
+process_command_line(const ScriptContext *ctx,
+                     const char *line,
+                     char *bg_name,
+                     enum StandId *left_stand,
+                     enum FaceId *left_face,
+                     enum StandId *right_stand,
+                     enum FaceId *right_face)
 {
     char cmd[32];
     char arg1[32];
@@ -364,7 +366,9 @@ static void process_command_line(const ScriptContext *ctx,
         return;
     }
 
-    if (strcmp(cmd, "#bg") == 0 || strcmp(cmd, "#bgwipe") == 0) {
+    if (strcmp(cmd, "#bg") == 0 ||
+        strcmp(cmd, "#bgwipe") == 0 ||
+        strcmp(cmd, "#bginterlace") == 0) {
         if (count >= 2) {
             strncpy(bg_name, arg1, 31);
             bg_name[31] = '\0';
@@ -679,10 +683,11 @@ static enum CommandResult handle_external_command(const ScriptContext *ctx,
     return COMMAND_NOT_HANDLED;
 }
 
-static enum CommandResult handle_display_command(const ScriptContext *ctx,
-                                                 const char *line,
-                                                 const ParsedCommand *command,
-                                                 SceneRenderState *render)
+static enum CommandResult __attribute__((optimize("Os")))
+handle_display_command(const ScriptContext *ctx,
+                       const char *line,
+                       const ParsedCommand *command,
+                       SceneRenderState *render)
 {
     char old_bg_name[32];
     enum StandId old_left_stand;
@@ -693,6 +698,7 @@ static enum CommandResult handle_display_command(const ScriptContext *ctx,
 
     if (strcmp(command->cmd, "#bg") != 0 &&
         strcmp(command->cmd, "#bgwipe") != 0 &&
+        strcmp(command->cmd, "#bginterlace") != 0 &&
         strcmp(command->cmd, "#left") != 0 &&
         strcmp(command->cmd, "#leftwipe") != 0 &&
         strcmp(command->cmd, "#leftinterlace") != 0 &&
@@ -714,8 +720,13 @@ static enum CommandResult handle_display_command(const ScriptContext *ctx,
     if (command->count >= 2) {
         if (strcmp(command->cmd, "#bgwipe") == 0) {
             render->bg_wipe_pending = 1;
+            render->bg_interlace_pending = 0;
+        } else if (strcmp(command->cmd, "#bginterlace") == 0) {
+            render->bg_wipe_pending = 0;
+            render->bg_interlace_pending = 1;
         } else if (strcmp(command->cmd, "#bg") == 0) {
             render->bg_wipe_pending = 0;
+            render->bg_interlace_pending = 0;
         } else if (strcmp(command->cmd, "#leftwipe") == 0) {
             render->left_wipe_pending = 1;
             render->left_interlace_pending = 0;
@@ -742,6 +753,7 @@ static enum CommandResult handle_display_command(const ScriptContext *ctx,
                          &state->right_stand, &state->right_face);
 
     if (render->bg_wipe_pending ||
+        render->bg_interlace_pending ||
         strcmp(state->bg_name, old_bg_name) != 0) {
         render->scene_dirty = 1;
         render->stand_dirty = 0;
@@ -759,14 +771,17 @@ static enum CommandResult handle_display_command(const ScriptContext *ctx,
     return COMMAND_HANDLED;
 }
 
-static void draw_full_scene(const ScriptContext *ctx,
-                            SceneRenderState *render,
-                            int use_background_wipe)
+static void __attribute__((optimize("Os")))
+draw_full_scene(const ScriptContext *ctx,
+                SceneRenderState *render,
+                int use_background_effect)
 {
     GameState *state;
 
     state = ctx->state;
-    if (use_background_wipe && render->bg_wipe_pending) {
+    if (use_background_effect && render->bg_interlace_pending) {
+        ctx->draw_background_interlace(state->bg_name);
+    } else if (use_background_effect && render->bg_wipe_pending) {
         ctx->draw_background_center_wipe(state->bg_name);
     } else {
         ctx->draw_background(state->bg_name);
@@ -801,8 +816,9 @@ static void draw_full_scene(const ScriptContext *ctx,
     render->last_right_face = state->right_face;
 }
 
-static void redraw_scene_if_needed(const ScriptContext *ctx,
-                                   SceneRenderState *render)
+static void __attribute__((optimize("Os")))
+redraw_scene_if_needed(const ScriptContext *ctx,
+                       SceneRenderState *render)
 {
     GameState *state;
 
@@ -813,6 +829,7 @@ static void redraw_scene_if_needed(const ScriptContext *ctx,
         render->scene_dirty = 0;
         render->stand_dirty = 0;
         render->bg_wipe_pending = 0;
+        render->bg_interlace_pending = 0;
         render->left_wipe_pending = 0;
         render->left_interlace_pending = 0;
         render->right_wipe_pending = 0;
@@ -895,6 +912,7 @@ enum GameResult run_script_sjis(const ScriptContext *ctx)
         ctx->request_scene_redraw == 0 ||
         ctx->request_script_resume == 0 ||
         ctx->system_action == 0 ||
+        ctx->draw_background_interlace == 0 ||
         ctx->draw_stand_interlace == 0 ||
         ctx->refresh_left_stand_only_interlace == 0 ||
         ctx->refresh_right_stand_only_interlace == 0) {
@@ -905,6 +923,7 @@ enum GameResult run_script_sjis(const ScriptContext *ctx)
 
     render.stand_dirty = 0;
     render.bg_wipe_pending = 0;
+    render.bg_interlace_pending = 0;
     render.left_wipe_pending = 0;
     render.left_interlace_pending = 0;
     render.right_wipe_pending = 0;
@@ -942,6 +961,7 @@ enum GameResult run_script_sjis(const ScriptContext *ctx)
             render.scene_dirty = 1;
             render.stand_dirty = 0;
             render.bg_wipe_pending = 0;
+            render.bg_interlace_pending = 0;
             render.left_wipe_pending = 0;
             render.left_interlace_pending = 0;
             render.right_wipe_pending = 0;
@@ -973,7 +993,7 @@ enum GameResult run_script_sjis(const ScriptContext *ctx)
              *   control:  #label, #jump, #call, #return
              *   flags:    #setnum, #ifeq
              *   external: #pal, #bgm
-             *   display:  #bgwipe, #leftwipe, #rightwipe,
+             *   display:  #bgwipe, #bginterlace, #leftwipe, #rightwipe,
              *             #leftinterlace, #rightinterlace
              * Other supported commands are routed through the same groups.
              */

@@ -89,6 +89,7 @@ static void text98_hide_cursor(void);
 static void text98_clear_screen(void);
 static void ui_draw_background(const char *bg_name);
 static void ui_draw_background_center_wipe(const char *bg_name);
+static void ui_draw_background_interlace(const char *bg_name);
 static void ui_draw_message_window(void);
 static void ui_set_message_box(int x0, int y0, int x1, int y1);
 static int ui_get_message_line_chars(void);
@@ -329,9 +330,12 @@ static void build_bg_path(const char *bg_name, char *path, int path_size)
     path[i] = '\0';
 }
 
-static void ui_draw_background(const char *bg_name)
+static void __attribute__((noinline, optimize("Os")))
+ui_draw_background_effect(const char *bg_name, int effect,
+                          const char *failure_format)
 {
     char path[40];
+    int ok;
 
     if (bg_name == 0 || bg_name[0] == '\0') {
         ui_draw_background_test();
@@ -341,34 +345,36 @@ static void ui_draw_background(const char *bg_name)
     build_bg_path(bg_name, path, sizeof(path));
 
     if (path[0] != '\0') {
-        if (graph98_load_g98(path)) {
+        if (effect == 1) {
+            ok = graph98_load_g98_center_wipe(path, BG_WIPE_STEP_LINES);
+        } else if (effect == 2) {
+            ok = graph98_load_g98_interlace(path);
+        } else {
+            ok = graph98_load_g98(path);
+        }
+
+        if (ok) {
             return;
         }
-        debug_log("bg load failed: %s", path);
+        debug_log(failure_format, path);
     }
 
     ui_draw_background_test();
 }
 
+static void ui_draw_background(const char *bg_name)
+{
+    ui_draw_background_effect(bg_name, 0, "bg load failed: %s");
+}
+
 static void ui_draw_background_center_wipe(const char *bg_name)
 {
-    char path[40];
+    ui_draw_background_effect(bg_name, 1, "bg wipe load failed: %s");
+}
 
-    if (bg_name == 0 || bg_name[0] == '\0') {
-        ui_draw_background_test();
-        return;
-    }
-
-    build_bg_path(bg_name, path, sizeof(path));
-
-    if (path[0] != '\0') {
-        if (graph98_load_g98_center_wipe(path, BG_WIPE_STEP_LINES)) {
-            return;
-        }
-        debug_log("bg wipe load failed: %s", path);
-    }
-
-    ui_draw_background_test();
+static void ui_draw_background_interlace(const char *bg_name)
+{
+    ui_draw_background_effect(bg_name, 2, "bg interlace load failed: %s");
 }
 
 /*
@@ -1379,6 +1385,7 @@ int main(void)
         script_context.set_message_box = ui_set_message_box;
         script_context.draw_background = ui_draw_background;
         script_context.draw_background_center_wipe = ui_draw_background_center_wipe;
+        script_context.draw_background_interlace = ui_draw_background_interlace;
         script_context.draw_stand = ui_draw_stand;
         script_context.draw_stand_center_wipe = ui_draw_stand_center_wipe;
         script_context.draw_stand_interlace = ui_draw_stand_interlace;

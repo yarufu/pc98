@@ -30,6 +30,7 @@ typedef struct {
     void (*set_message_box)(int x0, int y0, int x1, int y1);
     void (*draw_background)(const char *bg_name);
     void (*draw_background_center_wipe)(const char *bg_name);
+    void (*draw_background_interlace)(const char *bg_name);
     void (*draw_stand)(enum StandId stand_id, enum FaceId face_id,
                        int x, int y, int facing_left);
     void (*draw_stand_center_wipe)(enum StandId stand_id, enum FaceId face_id,

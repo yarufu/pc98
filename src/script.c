@@ -705,12 +705,20 @@ handle_display_command(const ScriptContext *ctx,
     old_right_stand = state->right_stand;
     old_right_face = state->right_face;
 
-    if (command->count >= 2) {
-        if (strcmp(command->cmd, "#bginterlace") == 0) {
-            render->bg_interlace_pending = 1;
-        } else if (strcmp(command->cmd, "#bg") == 0) {
-            render->bg_interlace_pending = 0;
-        } else if (strcmp(command->cmd, "#leftinterlace") == 0) {
+    if (strcmp(command->cmd, "#bginterlace") == 0) {
+        render->bg_interlace_pending = 1;
+        if (command->count < 2) {
+            state->bg_name[0] = '\0';
+            render->scene_dirty = 1;
+        }
+    } else if (strcmp(command->cmd, "#bg") == 0) {
+        render->bg_interlace_pending = 0;
+        if (command->count < 2) {
+            state->bg_name[0] = '\0';
+            render->scene_dirty = 1;
+        }
+    } else if (command->count >= 2) {
+        if (strcmp(command->cmd, "#leftinterlace") == 0) {
             render->left_interlace_pending = 1;
         } else if (strcmp(command->cmd, "#left") == 0) {
             render->left_interlace_pending = 0;

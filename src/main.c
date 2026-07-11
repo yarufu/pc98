@@ -88,7 +88,6 @@ static void ui_draw_background_interlace(const char *bg_name);
 static void ui_draw_message_window(void);
 static void ui_set_message_box(int x0, int y0, int x1, int y1);
 static int ui_get_message_line_chars(void);
-static void ui_draw_background_test(void);
 static const char *ui_get_stand_sprite_path(enum StandId stand_id,
                                             enum FaceId face_id,
                                             int facing_left);
@@ -324,27 +323,26 @@ ui_draw_background_effect(const char *bg_name, int interlace,
     char path[40];
     int ok;
 
-    if (bg_name == 0 || bg_name[0] == '\0') {
-        ui_draw_background_test();
-        return;
+    if (bg_name != 0 && bg_name[0] != '\0') {
+        build_bg_path(bg_name, path, sizeof(path));
+
+        if (path[0] != '\0') {
+            if (interlace) {
+                ok = graph98_load_g98_interlace(path);
+            } else {
+                ok = graph98_load_g98(path);
+            }
+
+            if (ok) {
+                return;
+            }
+            debug_log(failure_format, path);
+        }
     }
 
-    build_bg_path(bg_name, path, sizeof(path));
-
-    if (path[0] != '\0') {
-        if (interlace) {
-            ok = graph98_load_g98_interlace(path);
-        } else {
-            ok = graph98_load_g98(path);
-        }
-
-        if (ok) {
-            return;
-        }
-        debug_log(failure_format, path);
-    }
-
-    ui_draw_background_test();
+    graph98_clear(0);
+    graph98_boxfill(20, 20, 180, 80, 4);
+    graph98_draw_string(30, 45, "BG LOAD NG", 15);
 }
 
 static void ui_draw_background(const char *bg_name)
@@ -355,166 +353,6 @@ static void ui_draw_background(const char *bg_name)
 static void ui_draw_background_interlace(const char *bg_name)
 {
     ui_draw_background_effect(bg_name, 1, "bg interlace load failed: %s");
-}
-
-/*
- * 画像なしで「体育館っぽい背景」を描くテスト版です。
- *
- * 方針:
- * - 上部 0～299 をメイン背景
- * - その中を「壁」と「床」に分割
- * - 壁に柱っぽい縦ライン
- * - 床に境界線と板ライン
- * - 下部 300～399 は既存UI用の紫エリアを維持
- * - 左右の装飾柱も維持
- *
- * 既存のメッセージウィンドウ/選択肢UIと重ならないよう、
- * UI領域そのものの構造は崩していません。
- */
-static void ui_draw_background_test(void)
-{
-    int x;
-    int y;
-
-    /* =========================================================
-     * まず全体の土台
-     * ========================================================= */
-
-    /* 上部メイン表示領域の下地 */
-    graph98_boxfill(0,   0, 639, 299, 8);
-
-    /* 下部UIエリア（今まで通り） */
-    graph98_boxfill(0, 300, 639, 399, 5);
-
-    /* 左右の装飾柱（今まで通り） */
-    graph98_boxfill(0,   0,  63, 399, 5);
-    graph98_boxfill(576, 0, 639, 399, 5);
-
-    /* =========================================================
-     * 上部メイン表示領域：体育館っぽい壁
-     * ========================================================= */
-
-    /*
-     * 壁を上・中・下で少しだけ色分けして、
-     * 単色ベタ塗り感を減らします。
-     */
-    graph98_boxfill(64,  0, 575,  55, 7);   /* 上の明るい帯 */
-    graph98_boxfill(64, 56, 575, 165, 8);   /* 壁の本体 */
-    graph98_boxfill(64,166, 575, 199, 7);   /* 床との間の帯 */
-
-    /* 壁の最上部ライン */
-    graph98_hline(64, 575,  12, 15);
-    graph98_hline(64, 575,  13, 7);
-
-    /*
-     * 柱っぽい縦帯。
-     * 太い縦帯 + 中央の明るい線で、
-     * のっぺり感を減らします。
-     */
-    graph98_boxfill(110,  24, 126, 199, 1);
-    graph98_boxfill(236,  24, 252, 199, 1);
-    graph98_boxfill(388,  24, 404, 199, 1);
-    graph98_boxfill(514,  24, 530, 199, 1);
-
-    graph98_vline(118, 24, 199, 9);
-    graph98_vline(244, 24, 199, 9);
-    graph98_vline(396, 24, 199, 9);
-    graph98_vline(522, 24, 199, 9);
-
-    /* 柱の左右の影ライン */
-    graph98_vline(110, 24, 199, 0);
-    graph98_vline(126, 24, 199, 15);
-    graph98_vline(236, 24, 199, 0);
-    graph98_vline(252, 24, 199, 15);
-    graph98_vline(388, 24, 199, 0);
-    graph98_vline(404, 24, 199, 15);
-    graph98_vline(514, 24, 199, 0);
-    graph98_vline(530, 24, 199, 15);
-
-    /*
-     * 上の壁に横ラインを少し入れて、
-     * 体育館の内壁パネルっぽさを出します。
-     */
-    graph98_hline(64, 575,  55, 15);
-    graph98_hline(64, 575,  56, 7);
-    graph98_hline(64, 575, 110, 7);
-    graph98_hline(64, 575, 111, 0);
-    graph98_hline(64, 575, 165, 15);
-    graph98_hline(64, 575, 166, 7);
-
-    /* =========================================================
-     * 床
-     * ========================================================= */
-
-    /*
-     * 床領域。
-     * 200～299 を床にして、壁と分離します。
-     */
-    graph98_boxfill(64, 200, 575, 299, 6);
-
-    /*
-     * 壁と床の境界線。
-     * ここがあるだけでかなり「部屋」感が出ます。
-     */
-    graph98_hline(64, 575, 199, 15);
-    graph98_hline(64, 575, 200, 0);
-
-    /*
-     * 床の板ライン。
-     * 等間隔の横線で、木床っぽい雰囲気を出します。
-     */
-    for (y = 214; y <= 294; y += 14) {
-        graph98_hline(64, 575, y, 14);
-    }
-
-    /*
-     * 床の縦の継ぎ目。
-     * まっすぐ入れるだけでも、単色感がだいぶ減ります。
-     */
-    for (x = 96; x <= 544; x += 48) {
-        graph98_vline(x, 200, 299, 14);
-    }
-
-    /*
-     * センター付近だけ明るめの長方形を入れて、
-     * 「床の反射」「照明が当たっている感じ」を簡易表現。
-     */
-    graph98_boxfill(220, 214, 420, 284, 14);
-    graph98_rect(220, 214, 420, 284, 6);
-
-    /*
-     * 反射帯を数本だけ入れる。
-     * ベタっとしすぎないように間引いています。
-     */
-    graph98_hline(236, 404, 228, 15);
-    graph98_hline(232, 408, 246, 15);
-    graph98_hline(228, 412, 264, 15);
-
-    /*
-     * 体育館のコートっぽい線を簡易で追加。
-     * あくまで雰囲気なので最小構成です。
-     */
-    graph98_rect(176, 224, 464, 288, 15);
-    graph98_vline(320, 224, 288, 15);
-    graph98_hline(272, 368, 256, 15);
-
-    /* =========================================================
-     * 既存UIとの境界
-     * ========================================================= */
-
-    /*
-     * メイン背景と下部UIの区切り。
-     * 今までの区切り線を少し強めにしています。
-     */
-    graph98_hline(0, 639, 298, 8);
-    graph98_hline(0, 639, 299, 15);
-    graph98_hline(0, 639, 300, 1);
-
-    /* 左右の紫柱にも縁線を入れて少し締める */
-    graph98_vline(63,  0, 399, 15);
-    graph98_vline(64,  0, 399, 1);
-    graph98_vline(575, 0, 399, 1);
-    graph98_vline(576, 0, 399, 15);
 }
 
 static void ui_restore_stand_background_rect(int x0, int y0, int x1, int y1, const char *bg_name)

@@ -25,8 +25,6 @@
 #define STAND_W        256
 #define STAND_H        290
 
-struct Message;
-
 #define MAX_CHOICE_ITEMS 6
 #define MAX_CHOICE_CHARS 64
 #define MAX_CHOICE_DRAW_CHARS 8
@@ -80,7 +78,6 @@ static int g_choice_saved_lens[MAX_CHOICE_ITEMS];
 /* 関数宣言部 */
 static void ui_redraw_current_scene_from_state(void);
 static void ui_hide_message_window_until_resume(void);
-static void ui_draw_wait_mark(int x, int y, unsigned char color);
 static void text98_hide_cursor(void);
 static void text98_clear_screen(void);
 static void ui_draw_background(const char *bg_name);
@@ -91,13 +88,10 @@ static int ui_get_message_line_chars(void);
 static const char *ui_get_stand_sprite_path(enum StandId stand_id,
                                             enum FaceId face_id,
                                             int facing_left);
-static void ui_draw_stand_placeholder(int x, int y);
 static void ui_draw_stand(enum StandId stand_id, enum FaceId face_id,
                           int x, int y, int facing_left);
 static void ui_draw_stand_interlace(enum StandId stand_id, enum FaceId face_id,
                                     int x, int y, int facing_left);
-static void ui_draw_stands_for_message(const struct Message *msg);
-static void ui_draw_cursor_triangle(int x, int y, unsigned char color);
 static int ui_draw_message_page_jis(const uint16_t *name, int name_len,
                                     const uint16_t *jis_codes, int count,
                                     int start_index);
@@ -130,62 +124,7 @@ static void request_loaded_game_resume(void);
 static void app_cleanup(void);
 
 
-static void ui_draw_wait_mark(int x, int y, unsigned char color)
-{
-    graph98_hline(x + 0, x + 8, y + 0, color);
-    graph98_hline(x + 1, x + 7, y + 1, color);
-    graph98_hline(x + 2, x + 6, y + 2, color);
-    graph98_hline(x + 3, x + 5, y + 3, color);
-    graph98_hline(x + 4, x + 4, y + 4, color);
-}
-
 static void ui_draw_choice_jis(int choice_count, int selected);
-
-
-struct Message {
-    const uint16_t *name;
-    int name_len;
-
-    const uint16_t *text;
-    int text_len;
-
-    enum StandId left_stand;
-    enum StandId right_stand;
-    enum FaceId left_face;
-    enum FaceId right_face;
-
-    int has_choice;
-
-    const uint16_t *choice1;
-    int choice1_len;
-
-    const uint16_t *choice2;
-    int choice2_len;
-
-    int next;
-    int next1;
-    int next2;
-};
-
-/*
- * 小さい右向き三角カーソルを描きます。
- *
- * 文字ではなく、横線を少しずつ長くして
- * 右向きの三角にしています。
- */
-static void ui_draw_cursor_triangle(int x, int y, unsigned char color)
-{
-    graph98_hline(x,     x,     y + 0, color);
-    graph98_hline(x,     x + 1, y + 1, color);
-    graph98_hline(x,     x + 2, y + 2, color);
-    graph98_hline(x,     x + 3, y + 3, color);
-    graph98_hline(x,     x + 4, y + 4, color);
-    graph98_hline(x,     x + 3, y + 5, color);
-    graph98_hline(x,     x + 2, y + 6, color);
-    graph98_hline(x,     x + 1, y + 7, color);
-    graph98_hline(x,     x,     y + 8, color);
-}
-
 
 static void ui_set_message_box(int x0, int y0, int x1, int y1)
 {
@@ -465,19 +404,6 @@ static const char *ui_get_stand_sprite_path(enum StandId stand_id,
     return path;
 }
 
-static void ui_draw_stand_placeholder(int x, int y)
-{
-    /*
-     * スプライトファイルがまだ無い場合の最小表示です。
-     * 以前の仮立ち絵のような大きな矩形ではなく、
-     * 画像ロード失敗が分かるための小さい目印だけ描きます。
-     */
-    graph98_boxfill(x + 28, y + 40, x + 100, y + 200, 0);
-    graph98_rect(   x + 28, y + 40, x + 100, y + 200, 15);
-    graph98_draw_string(x + 38, y + 112, "SPRITE", 15);
-    graph98_draw_string(x + 44, y + 124, "MISSING", 12);
-}
-
 static void ui_draw_stand(enum StandId stand_id, enum FaceId face_id,
                           int x, int y, int facing_left)
 {
@@ -503,7 +429,6 @@ static void ui_draw_stand(enum StandId stand_id, enum FaceId face_id,
     if (!graph98_draw_sprite_file_trans(sprite_path, x, y, 0)) {
         debug_log("sprite load failed: %s", sprite_path);
 
-        // ui_draw_stand_placeholder(x, y);
         graph98_boxfill(x + 20, y + 20, x + 180, y + 80, 4);
         graph98_draw_string(x + 30, y + 45, "SPRITE LOAD NG", 15);
 
@@ -532,16 +457,6 @@ static void ui_draw_stand_interlace(enum StandId stand_id, enum FaceId face_id,
         graph98_boxfill(x + 20, y + 20, x + 180, y + 80, 4);
         graph98_draw_string(x + 30, y + 45, "SPRITE LOAD NG", 15);
     }
-}
-
-static void ui_draw_stands_for_message(const struct Message *msg)
-{
-    if (msg == 0) {
-        return;
-    }
-
-    ui_draw_stand(msg->left_stand,  msg->left_face,  STAND_LEFT_X,  STAND_Y, 0);
-    ui_draw_stand(msg->right_stand, msg->right_face, STAND_RIGHT_X, STAND_Y, 1);
 }
 
 static int ui_draw_message_page_jis(const uint16_t *name, int name_len,
@@ -668,10 +583,6 @@ static int ui_draw_message_page_jis(const uint16_t *name, int name_len,
     if (line3_count > 0) {
         draw_jis_string(g_msg_text_x, message_line3_y, line3, line3_count);
     }
-
-
-    /* 続きアイコンは非表示 */
-     // ui_draw_wait_mark(528, 368, 15);
 
     return line1_count + line2_count + line3_count;
 }
@@ -838,23 +749,6 @@ static void text98_hide_cursor(void)
         : "ax", "cx", "memory", "cc");
 }
 
-// ASCII用の簡易表示関数
-static void ui_draw_message_ascii(const char *name, const char *text)
-{
-    ui_draw_message_window();
-
-    if (name != 0) {
-        graph98_draw_string(105, 321, "[", 1);
-        graph98_draw_string(113, 321, name, 1);
-        graph98_draw_string(113 + strlen(name) * 6, 321, "]", 1);
-    }
-
-    graph98_draw_string(105, 345, text, 1);
-
-    /* 続きアイコンは非表示 */
-    // ui_draw_wait_mark(528, 368, 15);
-}
-
 // 改行削除関数
 static void remove_newline(char *str)
 {
@@ -968,58 +862,6 @@ static void request_loaded_game_resume(void)
     g_request_scene_redraw = 1;
     g_request_script_resume = 1;
 }
-
-// スクリプト再生関数
-static void run_script_ascii(void)
-{
-    FILE *fp;
-    char line[256];
-    char current_name[64] = "";
-
-    fp = fopen("script.txt", "r");
-    if (fp == 0) {
-        return;
-    }
-
-    while (fgets(line, sizeof(line), fp) != 0) {
-
-        remove_newline(line);
-        trim_leading_spaces(line);
-        /* 空行・コメント行スキップ */
-        if (line[0] == '\0' || line[0] == ';') {
-            continue;
-        }
-
-        /* 名前行 [NAME] */
-        if (line[0] == '[') {
-            int i;
-            int j = 0;
-
-            for (i = 1; line[i] != '\0' && line[i] != ']'; ++i) {
-                current_name[j++] = line[i];
-            }
-            current_name[j] = '\0';
-
-            continue;
-        }
-
-        /* セリフ表示 */
-        graph98_clear(0);
-        ui_draw_background("bg001");
-
-        /* ここはとりあえず固定立ち絵でもOK */
-        ui_draw_stand(STAND_CHARACTER01, FACE_NORMAL, 60, STAND_Y, 0);
-
-        ui_draw_message_ascii(current_name, line);
-
-        if (!input_wait_key()) {
-            continue;
-        }
-    }
-
-    fclose(fp);
-}
-
 
 // 立ち絵を今の状態で描く関数
 static void ui_draw_current_stands(enum StandId left_stand,

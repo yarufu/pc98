@@ -613,7 +613,16 @@ static const char *ui_get_stand_sprite_path(enum StandId stand_id,
     }
 
     stand_no = (int)stand_id;
-    snprintf(path, sizeof(path), "c%02d_%c.spr", stand_no, face_suffix);
+    path[0] = 'c';
+    path[1] = (char)('0' + stand_no / 10);
+    path[2] = (char)('0' + stand_no % 10);
+    path[3] = '_';
+    path[4] = face_suffix;
+    path[5] = '.';
+    path[6] = 's';
+    path[7] = 'p';
+    path[8] = 'r';
+    path[9] = '\0';
 
     return path;
 }

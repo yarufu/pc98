@@ -18,7 +18,7 @@
 #include <stdlib.h>
 
 // キャラの位置調整
-#define STAND_LEFT_X   60
+#define STAND_LEFT_X   64
 #define STAND_RIGHT_X  320
 #define STAND_Y        9
 

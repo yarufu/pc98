@@ -1513,8 +1513,9 @@ static int graph98_draw_sprite_file_trans_interlace_range(FILE *fp,
     return 1;
 }
 
-int graph98_draw_sprite_file_trans_interlace(const char *path, int x, int y,
-                                             unsigned char transparent_color)
+int __attribute__((optimize("Os")))
+graph98_draw_sprite_file_trans_interlace(const char *path, int x, int y,
+                                         unsigned char transparent_color)
 {
     struct graph98_sprite_header header;
     FILE *fp;
@@ -1572,21 +1573,23 @@ int graph98_draw_sprite_file_trans_interlace(const char *path, int x, int y,
         uint16_t bottom_start;
         uint16_t bottom_end;
 
-        top_start = sweep_y;
         top_end = (uint16_t)(sweep_y + GRAPH98_SPRITE_INTERLACE_GROUP_LINES);
         if (top_end > header.height) {
             top_end = header.height;
         }
 
-        if (sweep_y + GRAPH98_SPRITE_INTERLACE_GROUP_LINES >=
-            header.height) {
-            bottom_start = 0;
+        if (sweep_y == 0) {
+            top_start = 0;
         } else {
-            bottom_start = (uint16_t)(header.height -
-                                      sweep_y -
-                                      GRAPH98_SPRITE_INTERLACE_GROUP_LINES);
+            top_start = (uint16_t)(sweep_y +
+                                   GRAPH98_SPRITE_INTERLACE_GROUP_LINES -
+                                   GRAPH98_SPRITE_INTERLACE_SWEEP_LINES);
+            if (top_start > header.height) {
+                top_start = header.height;
+            }
         }
-        bottom_end = (uint16_t)(header.height - sweep_y);
+        bottom_start = (uint16_t)(header.height - top_end);
+        bottom_end = (uint16_t)(header.height - top_start);
 
         if (!graph98_draw_sprite_file_trans_interlace_range(fp,
                                                             &header,
@@ -1620,6 +1623,9 @@ int graph98_draw_sprite_file_trans_interlace(const char *path, int x, int y,
         }
 
         graph98_wait_vsync();
+        if (top_end == header.height && bottom_start == 0) {
+            break;
+        }
         sweep_y = (uint16_t)(sweep_y + GRAPH98_SPRITE_INTERLACE_SWEEP_LINES);
     }
 

@@ -28,17 +28,17 @@ typedef struct {
     enum SystemAction *system_action;
 
     void (*set_message_box)(int x0, int y0, int x1, int y1);
-    void (*draw_background)(const char *bg_name);
-    void (*draw_background_interlace)(const char *bg_name);
+    void (*draw_background)(const char *bg_file);
+    void (*draw_background_interlace)(const char *bg_file);
     void (*draw_stand)(const char *sprite_file, int x, int y);
     void (*draw_stand_interlace)(const char *sprite_file, int x, int y);
-    void (*refresh_left_stand_only)(const char *bg_name,
+    void (*refresh_left_stand_only)(const char *bg_file,
                                     const char *sprite_file);
-    void (*refresh_left_stand_only_interlace)(const char *bg_name,
+    void (*refresh_left_stand_only_interlace)(const char *bg_file,
                                               const char *sprite_file);
-    void (*refresh_right_stand_only)(const char *bg_name,
+    void (*refresh_right_stand_only)(const char *bg_file,
                                      const char *sprite_file);
-    void (*refresh_right_stand_only_interlace)(const char *bg_name,
+    void (*refresh_right_stand_only_interlace)(const char *bg_file,
                                                const char *sprite_file);
     void (*draw_message_jis)(const uint16_t *name, int name_len,
                              const uint16_t *jis_codes, int count);

@@ -80,8 +80,8 @@ static void ui_redraw_current_scene_from_state(void);
 static void ui_hide_message_window_until_resume(void);
 static void text98_hide_cursor(void);
 static void text98_clear_screen(void);
-static void ui_draw_background(const char *bg_name);
-static void ui_draw_background_interlace(const char *bg_name);
+static void ui_draw_background(const char *bg_file);
+static void ui_draw_background_interlace(const char *bg_file);
 static void ui_draw_message_window(void);
 static void ui_set_message_box(int x0, int y0, int x1, int y1);
 static int ui_get_message_line_chars(void);
@@ -97,14 +97,14 @@ static void ui_draw_current_stands(const char *left_sprite,
 static void reset_choice_lines(void);
 static void store_choice_line(int index, const char *line) __attribute__((noinline));
 static void trim_leading_spaces(char *str);
-static void ui_restore_stand_background_rect(int x0, int y0, int x1, int y1, const char *bg_name);
-static void ui_refresh_left_stand_only(const char *bg_name,
+static void ui_restore_stand_background_rect(int x0, int y0, int x1, int y1, const char *bg_file);
+static void ui_refresh_left_stand_only(const char *bg_file,
                                        const char *sprite_file);
-static void ui_refresh_left_stand_only_interlace(const char *bg_name,
+static void ui_refresh_left_stand_only_interlace(const char *bg_file,
                                                  const char *sprite_file);
-static void ui_refresh_right_stand_only(const char *bg_name,
+static void ui_refresh_right_stand_only(const char *bg_file,
                                         const char *sprite_file);
-static void ui_refresh_right_stand_only_interlace(const char *bg_name,
+static void ui_refresh_right_stand_only_interlace(const char *bg_file,
                                                   const char *sprite_file);
 
 static void restore_palette_after_load(void);
@@ -211,61 +211,23 @@ static void ui_draw_message_window(void)
     graph98_boxfill(g_msgbox_x0, g_msgbox_y0, g_msgbox_x1, g_msgbox_y1, 0);
 }
 
-static void build_bg_path(const char *bg_name, char *path, int path_size)
-{
-    int i;
-
-    if (path_size <= 0) {
-        return;
-    }
-
-    if (bg_name == 0 || bg_name[0] == '\0') {
-        path[0] = '\0';
-        return;
-    }
-
-    for (i = 0; i < path_size - 1 && bg_name[i] != '\0'; ++i) {
-        path[i] = bg_name[i];
-    }
-
-    if (i < path_size - 1) {
-        path[i++] = '.';
-    }
-    if (i < path_size - 1) {
-        path[i++] = 'g';
-    }
-    if (i < path_size - 1) {
-        path[i++] = '9';
-    }
-    if (i < path_size - 1) {
-        path[i++] = '8';
-    }
-
-    path[i] = '\0';
-}
-
 static void __attribute__((noinline, optimize("Os")))
-ui_draw_background_effect(const char *bg_name, int interlace,
+ui_draw_background_effect(const char *bg_file, int interlace,
                           const char *failure_format)
 {
-    char path[40];
     int ok;
 
-    if (bg_name != 0 && bg_name[0] != '\0') {
-        build_bg_path(bg_name, path, sizeof(path));
-
-        if (path[0] != '\0') {
-            if (interlace) {
-                ok = graph98_load_g98_interlace(path);
-            } else {
-                ok = graph98_load_g98(path);
-            }
-
-            if (ok) {
-                return;
-            }
-            debug_log(failure_format, path);
+    if (bg_file != 0 && bg_file[0] != '\0') {
+        if (interlace) {
+            ok = graph98_load_g98_interlace(bg_file);
+        } else {
+            ok = graph98_load_g98(bg_file);
         }
+
+        if (ok) {
+            return;
+        }
+        debug_log(failure_format, bg_file);
     }
 
     graph98_clear(0);
@@ -273,27 +235,21 @@ ui_draw_background_effect(const char *bg_name, int interlace,
     graph98_draw_string(30, 45, "BG LOAD NG", 15);
 }
 
-static void ui_draw_background(const char *bg_name)
+static void ui_draw_background(const char *bg_file)
 {
-    ui_draw_background_effect(bg_name, 0, "bg load failed: %s");
+    ui_draw_background_effect(bg_file, 0, "bg load failed: %s");
 }
 
-static void ui_draw_background_interlace(const char *bg_name)
+static void ui_draw_background_interlace(const char *bg_file)
 {
-    ui_draw_background_effect(bg_name, 1, "bg interlace load failed: %s");
+    ui_draw_background_effect(bg_file, 1, "bg interlace load failed: %s");
 }
 
-static void ui_restore_stand_background_rect(int x0, int y0, int x1, int y1, const char *bg_name)
+static void ui_restore_stand_background_rect(int x0, int y0, int x1, int y1, const char *bg_file)
 {
-    char path[40];
-
-    if (bg_name != 0 && bg_name[0] != '\0') {
-        build_bg_path(bg_name, path, sizeof(path));
-
-        if (path[0] != '\0') {
-            if (graph98_load_g98_rect(path, x0, y0, x1, y1)) {
-                return;
-            }
+    if (bg_file != 0 && bg_file[0] != '\0') {
+        if (graph98_load_g98_rect(bg_file, x0, y0, x1, y1)) {
+            return;
         }
     }
 
@@ -301,50 +257,50 @@ static void ui_restore_stand_background_rect(int x0, int y0, int x1, int y1, con
      * 背景ファイル復元に失敗した場合の保険。
      * ここでは全背景再描画に戻します。
      */
-    ui_draw_background(bg_name);
+    ui_draw_background(bg_file);
 }
 
-static void ui_refresh_left_stand_only(const char *bg_name,
+static void ui_refresh_left_stand_only(const char *bg_file,
                                        const char *sprite_file)
 {
     ui_restore_stand_background_rect(STAND_LEFT_X,
                                      STAND_Y,
                                      STAND_LEFT_X + STAND_W - 1,
                                      STAND_Y + STAND_H - 1,
-                                     bg_name);
+                                     bg_file);
     ui_draw_stand(sprite_file, STAND_LEFT_X, STAND_Y);
 }
 
-static void ui_refresh_left_stand_only_interlace(const char *bg_name,
+static void ui_refresh_left_stand_only_interlace(const char *bg_file,
                                                  const char *sprite_file)
 {
     ui_restore_stand_background_rect(STAND_LEFT_X,
                                      STAND_Y,
                                      STAND_LEFT_X + STAND_W - 1,
                                      STAND_Y + STAND_H - 1,
-                                     bg_name);
+                                     bg_file);
     ui_draw_stand_interlace(sprite_file, STAND_LEFT_X, STAND_Y);
 }
 
-static void ui_refresh_right_stand_only(const char *bg_name,
+static void ui_refresh_right_stand_only(const char *bg_file,
                                         const char *sprite_file)
 {
     ui_restore_stand_background_rect(STAND_RIGHT_X,
                                      STAND_Y,
                                      STAND_RIGHT_X + STAND_W - 1,
                                      STAND_Y + STAND_H - 1,
-                                     bg_name);
+                                     bg_file);
     ui_draw_stand(sprite_file, STAND_RIGHT_X, STAND_Y);
 }
 
-static void ui_refresh_right_stand_only_interlace(const char *bg_name,
+static void ui_refresh_right_stand_only_interlace(const char *bg_file,
                                                   const char *sprite_file)
 {
     ui_restore_stand_background_rect(STAND_RIGHT_X,
                                      STAND_Y,
                                      STAND_RIGHT_X + STAND_W - 1,
                                      STAND_Y + STAND_H - 1,
-                                     bg_name);
+                                     bg_file);
     ui_draw_stand_interlace(sprite_file, STAND_RIGHT_X, STAND_Y);
 }
 
@@ -592,7 +548,7 @@ static void ui_draw_choice_jis(int choice_count, int selected)
 /* 現在の背景＋立ち絵を再描画する関数 */
 static void ui_redraw_current_scene_from_state(void)
 {
-    ui_draw_background(g_state.bg_name);
+    ui_draw_background(g_state.bg_file);
 
     ui_draw_current_stands(g_state.left_sprite, g_state.right_sprite);
 }

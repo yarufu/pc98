@@ -4,6 +4,7 @@
 #define MAX_FLAGS 16
 #define CALL_STACK_MAX 8
 #define SAVE_SLOT_COUNT 3
+#define BG_FILENAME_SIZE 13
 #define SPRITE_FILENAME_SIZE 13
 
 typedef struct {
@@ -12,7 +13,7 @@ typedef struct {
 } GameFlag;
 
 typedef struct {
-    char bg_name[32];
+    char bg_file[BG_FILENAME_SIZE];
     int script_line;
     int call_stack[CALL_STACK_MAX];
     int call_stack_depth;

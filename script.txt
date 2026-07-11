@@ -1,5 +1,5 @@
 #pal adv.pal
-#bginterlace class
+#bginterlace class.g98
 #bgm PLAY.M
 #rightinterlace C02_N.SPR
 

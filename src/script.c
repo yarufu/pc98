@@ -29,7 +29,7 @@ typedef struct {
 } ParsedCommand;
 
 typedef struct {
-    char last_bg_name[32];
+    char last_bg_file[BG_FILENAME_SIZE];
     char last_left_sprite[SPRITE_FILENAME_SIZE];
     char last_right_sprite[SPRITE_FILENAME_SIZE];
     int scene_dirty;
@@ -281,7 +281,7 @@ static void handle_choice_block(const ScriptContext *ctx, FILE *fp, int *script_
 static void __attribute__((optimize("Os")))
 process_command_line(const ScriptContext *ctx,
                      const char *line,
-                     char *bg_name,
+                     char *bg_file,
                      char *left_sprite,
                      char *right_sprite)
 {
@@ -312,8 +312,8 @@ process_command_line(const ScriptContext *ctx,
 
     if (strcmp(cmd, "#bg") == 0 || strcmp(cmd, "#bginterlace") == 0) {
         if (count >= 2) {
-            strncpy(bg_name, arg1, 31);
-            bg_name[31] = '\0';
+            strncpy(bg_file, arg1, BG_FILENAME_SIZE - 1);
+            bg_file[BG_FILENAME_SIZE - 1] = '\0';
         }
         return;
     }
@@ -627,7 +627,7 @@ handle_display_command(const ScriptContext *ctx,
                        const ParsedCommand *command,
                        SceneRenderState *render)
 {
-    char old_bg_name[32];
+    char old_bg_file[BG_FILENAME_SIZE];
     char old_left_sprite[SPRITE_FILENAME_SIZE];
     char old_right_sprite[SPRITE_FILENAME_SIZE];
     GameState *state;
@@ -643,21 +643,20 @@ handle_display_command(const ScriptContext *ctx,
     }
 
     state = ctx->state;
-    strncpy(old_bg_name, state->bg_name, sizeof(old_bg_name) - 1);
-    old_bg_name[sizeof(old_bg_name) - 1] = '\0';
+    strcpy(old_bg_file, state->bg_file);
     strcpy(old_left_sprite, state->left_sprite);
     strcpy(old_right_sprite, state->right_sprite);
 
     if (strcmp(command->cmd, "#bginterlace") == 0) {
         render->bg_interlace_pending = 1;
         if (command->count < 2) {
-            state->bg_name[0] = '\0';
+            state->bg_file[0] = '\0';
             render->scene_dirty = 1;
         }
     } else if (strcmp(command->cmd, "#bg") == 0) {
         render->bg_interlace_pending = 0;
         if (command->count < 2) {
-            state->bg_name[0] = '\0';
+            state->bg_file[0] = '\0';
             render->scene_dirty = 1;
         }
     } else if (command->count >= 2) {
@@ -672,11 +671,11 @@ handle_display_command(const ScriptContext *ctx,
         }
     }
 
-    process_command_line(ctx, line, state->bg_name,
+    process_command_line(ctx, line, state->bg_file,
                          state->left_sprite, state->right_sprite);
 
     if (render->bg_interlace_pending ||
-        strcmp(state->bg_name, old_bg_name) != 0) {
+        strcmp(state->bg_file, old_bg_file) != 0) {
         render->scene_dirty = 1;
         render->stand_dirty = 0;
     } else if (strcmp(state->left_sprite, old_left_sprite) != 0 ||
@@ -698,9 +697,9 @@ draw_full_scene(const ScriptContext *ctx,
 
     state = ctx->state;
     if (use_background_effect && render->bg_interlace_pending) {
-        ctx->draw_background_interlace(state->bg_name);
+        ctx->draw_background_interlace(state->bg_file);
     } else {
-        ctx->draw_background(state->bg_name);
+        ctx->draw_background(state->bg_file);
     }
     if (render->left_interlace_pending) {
         ctx->draw_stand_interlace(state->left_sprite, STAND_LEFT_X, STAND_Y);
@@ -713,9 +712,7 @@ draw_full_scene(const ScriptContext *ctx,
         ctx->draw_stand(state->right_sprite, STAND_RIGHT_X, STAND_Y);
     }
 
-    strncpy(render->last_bg_name, state->bg_name,
-            sizeof(render->last_bg_name) - 1);
-    render->last_bg_name[sizeof(render->last_bg_name) - 1] = '\0';
+    strcpy(render->last_bg_file, state->bg_file);
     strcpy(render->last_left_sprite, state->left_sprite);
     strcpy(render->last_right_sprite, state->right_sprite);
 }
@@ -730,7 +727,7 @@ redraw_scene_if_needed(const ScriptContext *ctx,
 
     state = ctx->state;
     if (render->scene_dirty ||
-        strcmp(render->last_bg_name, state->bg_name) != 0) {
+        strcmp(render->last_bg_file, state->bg_file) != 0) {
         draw_full_scene(ctx, render, 1);
         render->scene_dirty = 0;
         render->stand_dirty = 0;
@@ -753,19 +750,19 @@ redraw_scene_if_needed(const ScriptContext *ctx,
 
     if (left_needs_redraw && !right_needs_redraw) {
         if (render->left_interlace_pending) {
-            ctx->refresh_left_stand_only_interlace(state->bg_name,
+            ctx->refresh_left_stand_only_interlace(state->bg_file,
                                                    state->left_sprite);
         } else {
-            ctx->refresh_left_stand_only(state->bg_name,
+            ctx->refresh_left_stand_only(state->bg_file,
                                          state->left_sprite);
         }
         strcpy(render->last_left_sprite, state->left_sprite);
     } else if (!left_needs_redraw && right_needs_redraw) {
         if (render->right_interlace_pending) {
-            ctx->refresh_right_stand_only_interlace(state->bg_name,
+            ctx->refresh_right_stand_only_interlace(state->bg_file,
                                                     state->right_sprite);
         } else {
-            ctx->refresh_right_stand_only(state->bg_name,
+            ctx->refresh_right_stand_only(state->bg_file,
                                           state->right_sprite);
         }
         strcpy(render->last_right_sprite, state->right_sprite);
@@ -822,7 +819,7 @@ enum GameResult run_script_sjis(const ScriptContext *ctx)
         memset(state, 0, sizeof(*state));
     }
 
-    render.last_bg_name[0] = '\0';
+    render.last_bg_file[0] = '\0';
     render.last_left_sprite[0] = '\0';
     render.last_right_sprite[0] = '\0';
     render.scene_dirty = 1;

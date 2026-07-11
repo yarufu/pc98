@@ -8,7 +8,7 @@
 ;
 
 #pal adv.pal
-#bg class
+#bg class.g98
 #bgm PLAY.M
 #right C01_N.SPR
 

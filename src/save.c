@@ -5,7 +5,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#define SAVE_VERSION 3
+#define SAVE_VERSION 4
 
 typedef struct {
     char magic[8];
@@ -107,6 +107,7 @@ int load_game_state(const char *filename,
         return 0;
     }
 
+    save_data.state.bg_file[BG_FILENAME_SIZE - 1] = '\0';
     save_data.state.left_sprite[SPRITE_FILENAME_SIZE - 1] = '\0';
     save_data.state.right_sprite[SPRITE_FILENAME_SIZE - 1] = '\0';
 

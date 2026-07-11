@@ -49,12 +49,19 @@
 
 #define GRAPH98_IMAGE_WORK_SIZE \
     (GRAPH98_SPRITE_MAX_WIDTH * GRAPH98_SPRITE_CHUNK_LINES)
+#define GRAPH98_G98_RECT_CHUNK_LINES \
+    (GRAPH98_IMAGE_WORK_SIZE / GRAPH98_BYTES_PER_LINE)
 
 /* Image loaders are non-reentrant and share this buffer sequentially. */
 static uint8_t graph98_image_work[GRAPH98_IMAGE_WORK_SIZE];
 
 _Static_assert(GRAPH98_IMAGE_WORK_SIZE == 8192u,
                "image work buffer must be 8 KB");
+_Static_assert(GRAPH98_G98_RECT_CHUNK_LINES >= 1u,
+               "G98 rect chunk must contain at least one line");
+_Static_assert(GRAPH98_BYTES_PER_LINE * GRAPH98_G98_RECT_CHUNK_LINES <=
+                   GRAPH98_IMAGE_WORK_SIZE,
+               "G98 rect chunk exceeds image work buffer");
 _Static_assert(GRAPH98_BYTES_PER_LINE * GRAPH98_G98_CHUNK_LINES <=
                    GRAPH98_IMAGE_WORK_SIZE,
                "G98 chunk exceeds image work buffer");
@@ -861,26 +868,43 @@ static int graph98_copy_plane_rect_from_file(FILE *fp,
     /*
      * 旧版は 1 行ごとに fseek していました。
      * PC-98 の DOS 環境では fseek の回数が重いので、各プレーンで最初に1回だけ seek し、
-     * 以後は 80 バイトずつ順番に読んで必要な範囲だけ VRAM へ戻します。
+     * 以後は複数ラインを一括で読んで必要な範囲だけ VRAM へ戻します。
      */
     pos = plane_start + (unsigned long)y0 * GRAPH98_BYTES_PER_LINE;
     if (fseek(fp, pos, SEEK_SET) != 0) {
         return 0;
     }
 
-    for (y = y0; y <= y1; ++y) {
-        uint16_t dst_offset;
+    y = y0;
+    while (y <= y1) {
+        uint16_t chunk_lines;
+        uint16_t local_line;
 
-        if (fread(graph98_image_work, 1u, GRAPH98_BYTES_PER_LINE, fp) !=
-            GRAPH98_BYTES_PER_LINE) {
+        chunk_lines = (uint16_t)(y1 - y + 1);
+        if (chunk_lines > GRAPH98_G98_RECT_CHUNK_LINES) {
+            chunk_lines = GRAPH98_G98_RECT_CHUNK_LINES;
+        }
+
+        if (fread(graph98_image_work, GRAPH98_BYTES_PER_LINE,
+                  chunk_lines, fp) != chunk_lines) {
             return 0;
         }
 
-        dst_offset = (uint16_t)(y * GRAPH98_BYTES_PER_LINE + byte_x0);
-        for (i = 0; i < bytes; ++i) {
-            plane[(uint16_t)(dst_offset + i)] =
-                graph98_image_work[byte_x0 + i];
+        for (local_line = 0; local_line < chunk_lines; ++local_line) {
+            uint16_t dst_offset;
+            uint16_t src_offset;
+
+            dst_offset = (uint16_t)((y + (int)local_line) *
+                                    GRAPH98_BYTES_PER_LINE + byte_x0);
+            src_offset = (uint16_t)(local_line * GRAPH98_BYTES_PER_LINE +
+                                    byte_x0);
+            for (i = 0; i < bytes; ++i) {
+                plane[(uint16_t)(dst_offset + i)] =
+                    graph98_image_work[(uint16_t)(src_offset + i)];
+            }
         }
+
+        y += (int)chunk_lines;
     }
 
     return 1;

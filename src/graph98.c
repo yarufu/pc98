@@ -1148,25 +1148,24 @@ graph98_load_g98_interlace(const char *path)
     plane_size = (unsigned long)GRAPH98_BYTES_PER_LINE * GRAPH98_HEIGHT;
     sweep_y = 0;
 
-    while (sweep_y < GRAPH98_HEIGHT) {
+    while (sweep_y <= GRAPH98_HEIGHT -
+                      GRAPH98_G98_INTERLACE_GROUP_LINES) {
         uint16_t top_start;
         uint16_t top_end;
         uint16_t bottom_start;
         uint16_t bottom_end;
 
-        top_start = sweep_y;
         top_end = (uint16_t)(sweep_y + GRAPH98_G98_INTERLACE_GROUP_LINES);
-        if (top_end > GRAPH98_HEIGHT) {
-            top_end = GRAPH98_HEIGHT;
-        }
-
-        if (sweep_y + GRAPH98_G98_INTERLACE_GROUP_LINES >= GRAPH98_HEIGHT) {
-            bottom_start = 0;
+        bottom_start = (uint16_t)(GRAPH98_HEIGHT - top_end);
+        if (sweep_y == 0) {
+            top_start = 0;
+            bottom_end = GRAPH98_HEIGHT;
         } else {
-            bottom_start = (uint16_t)(GRAPH98_HEIGHT - sweep_y -
-                                      GRAPH98_G98_INTERLACE_GROUP_LINES);
+            top_start = (uint16_t)(top_end -
+                                   GRAPH98_G98_INTERLACE_SWEEP_LINES);
+            bottom_end = (uint16_t)(bottom_start +
+                                    GRAPH98_G98_INTERLACE_SWEEP_LINES);
         }
-        bottom_end = (uint16_t)(GRAPH98_HEIGHT - sweep_y);
 
         for (plane_index = 0; plane_index < 4; ++plane_index) {
             unsigned long plane_start;

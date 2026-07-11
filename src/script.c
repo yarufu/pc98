@@ -36,10 +36,7 @@ typedef struct {
     enum FaceId last_right_face;
     int scene_dirty;
     int stand_dirty;
-    int bg_wipe_pending;
     int bg_interlace_pending;
-    int left_wipe_pending;
-    int right_wipe_pending;
     int left_interlace_pending;
     int right_interlace_pending;
 } SceneRenderState;
@@ -366,9 +363,7 @@ process_command_line(const ScriptContext *ctx,
         return;
     }
 
-    if (strcmp(cmd, "#bg") == 0 ||
-        strcmp(cmd, "#bgwipe") == 0 ||
-        strcmp(cmd, "#bginterlace") == 0) {
+    if (strcmp(cmd, "#bg") == 0 || strcmp(cmd, "#bginterlace") == 0) {
         if (count >= 2) {
             strncpy(bg_name, arg1, 31);
             bg_name[31] = '\0';
@@ -395,9 +390,7 @@ process_command_line(const ScriptContext *ctx,
 
 
 
-    if (strcmp(cmd, "#left") == 0 ||
-        strcmp(cmd, "#leftwipe") == 0 ||
-        strcmp(cmd, "#leftinterlace") == 0) {
+    if (strcmp(cmd, "#left") == 0 || strcmp(cmd, "#leftinterlace") == 0) {
         if (count >= 2) {
             *left_stand = parse_stand_id(arg1);
         }
@@ -409,9 +402,7 @@ process_command_line(const ScriptContext *ctx,
         return;
     }
 
-    if (strcmp(cmd, "#right") == 0 ||
-        strcmp(cmd, "#rightwipe") == 0 ||
-        strcmp(cmd, "#rightinterlace") == 0) {
+    if (strcmp(cmd, "#right") == 0 || strcmp(cmd, "#rightinterlace") == 0) {
         if (count >= 2) {
             *right_stand = parse_stand_id(arg1);
         }
@@ -697,13 +688,10 @@ handle_display_command(const ScriptContext *ctx,
     GameState *state;
 
     if (strcmp(command->cmd, "#bg") != 0 &&
-        strcmp(command->cmd, "#bgwipe") != 0 &&
         strcmp(command->cmd, "#bginterlace") != 0 &&
         strcmp(command->cmd, "#left") != 0 &&
-        strcmp(command->cmd, "#leftwipe") != 0 &&
         strcmp(command->cmd, "#leftinterlace") != 0 &&
         strcmp(command->cmd, "#right") != 0 &&
-        strcmp(command->cmd, "#rightwipe") != 0 &&
         strcmp(command->cmd, "#rightinterlace") != 0 &&
         strcmp(command->cmd, "#msgbox") != 0) {
         return COMMAND_NOT_HANDLED;
@@ -718,32 +706,17 @@ handle_display_command(const ScriptContext *ctx,
     old_right_face = state->right_face;
 
     if (command->count >= 2) {
-        if (strcmp(command->cmd, "#bgwipe") == 0) {
-            render->bg_wipe_pending = 1;
-            render->bg_interlace_pending = 0;
-        } else if (strcmp(command->cmd, "#bginterlace") == 0) {
-            render->bg_wipe_pending = 0;
+        if (strcmp(command->cmd, "#bginterlace") == 0) {
             render->bg_interlace_pending = 1;
         } else if (strcmp(command->cmd, "#bg") == 0) {
-            render->bg_wipe_pending = 0;
             render->bg_interlace_pending = 0;
-        } else if (strcmp(command->cmd, "#leftwipe") == 0) {
-            render->left_wipe_pending = 1;
-            render->left_interlace_pending = 0;
         } else if (strcmp(command->cmd, "#leftinterlace") == 0) {
-            render->left_wipe_pending = 0;
             render->left_interlace_pending = 1;
         } else if (strcmp(command->cmd, "#left") == 0) {
-            render->left_wipe_pending = 0;
             render->left_interlace_pending = 0;
-        } else if (strcmp(command->cmd, "#rightwipe") == 0) {
-            render->right_wipe_pending = 1;
-            render->right_interlace_pending = 0;
         } else if (strcmp(command->cmd, "#rightinterlace") == 0) {
-            render->right_wipe_pending = 0;
             render->right_interlace_pending = 1;
         } else if (strcmp(command->cmd, "#right") == 0) {
-            render->right_wipe_pending = 0;
             render->right_interlace_pending = 0;
         }
     }
@@ -752,8 +725,7 @@ handle_display_command(const ScriptContext *ctx,
                          &state->left_stand, &state->left_face,
                          &state->right_stand, &state->right_face);
 
-    if (render->bg_wipe_pending ||
-        render->bg_interlace_pending ||
+    if (render->bg_interlace_pending ||
         strcmp(state->bg_name, old_bg_name) != 0) {
         render->scene_dirty = 1;
         render->stand_dirty = 0;
@@ -761,9 +733,7 @@ handle_display_command(const ScriptContext *ctx,
                state->left_face != old_left_face ||
                state->right_stand != old_right_stand ||
                state->right_face != old_right_face ||
-               render->left_wipe_pending ||
                render->left_interlace_pending ||
-               render->right_wipe_pending ||
                render->right_interlace_pending) {
         render->stand_dirty = 1;
     }
@@ -781,17 +751,12 @@ draw_full_scene(const ScriptContext *ctx,
     state = ctx->state;
     if (use_background_effect && render->bg_interlace_pending) {
         ctx->draw_background_interlace(state->bg_name);
-    } else if (use_background_effect && render->bg_wipe_pending) {
-        ctx->draw_background_center_wipe(state->bg_name);
     } else {
         ctx->draw_background(state->bg_name);
     }
     if (render->left_interlace_pending) {
         ctx->draw_stand_interlace(state->left_stand, state->left_face,
                                   STAND_LEFT_X, STAND_Y, 0);
-    } else if (render->left_wipe_pending) {
-        ctx->draw_stand_center_wipe(state->left_stand, state->left_face,
-                                    STAND_LEFT_X, STAND_Y, 0);
     } else {
         ctx->draw_stand(state->left_stand, state->left_face,
                         STAND_LEFT_X, STAND_Y, 0);
@@ -799,9 +764,6 @@ draw_full_scene(const ScriptContext *ctx,
     if (render->right_interlace_pending) {
         ctx->draw_stand_interlace(state->right_stand, state->right_face,
                                   STAND_RIGHT_X, STAND_Y, 1);
-    } else if (render->right_wipe_pending) {
-        ctx->draw_stand_center_wipe(state->right_stand, state->right_face,
-                                    STAND_RIGHT_X, STAND_Y, 1);
     } else {
         ctx->draw_stand(state->right_stand, state->right_face,
                         STAND_RIGHT_X, STAND_Y, 1);
@@ -828,11 +790,8 @@ redraw_scene_if_needed(const ScriptContext *ctx,
         draw_full_scene(ctx, render, 1);
         render->scene_dirty = 0;
         render->stand_dirty = 0;
-        render->bg_wipe_pending = 0;
         render->bg_interlace_pending = 0;
-        render->left_wipe_pending = 0;
         render->left_interlace_pending = 0;
-        render->right_wipe_pending = 0;
         render->right_interlace_pending = 0;
         return;
     }
@@ -849,10 +808,6 @@ redraw_scene_if_needed(const ScriptContext *ctx,
             ctx->refresh_left_stand_only_interlace(state->bg_name,
                                                    state->left_stand,
                                                    state->left_face);
-        } else if (render->left_wipe_pending) {
-            ctx->refresh_left_stand_only_wipe(state->bg_name,
-                                              state->left_stand,
-                                              state->left_face);
         } else {
             ctx->refresh_left_stand_only(state->bg_name,
                                          state->left_stand,
@@ -868,10 +823,6 @@ redraw_scene_if_needed(const ScriptContext *ctx,
             ctx->refresh_right_stand_only_interlace(state->bg_name,
                                                     state->right_stand,
                                                     state->right_face);
-        } else if (render->right_wipe_pending) {
-            ctx->refresh_right_stand_only_wipe(state->bg_name,
-                                               state->right_stand,
-                                               state->right_face);
         } else {
             ctx->refresh_right_stand_only(state->bg_name,
                                           state->right_stand,
@@ -880,14 +831,12 @@ redraw_scene_if_needed(const ScriptContext *ctx,
         render->last_right_stand = state->right_stand;
         render->last_right_face = state->right_face;
     } else {
-        /* The original fallback redraw does not use a background wipe. */
+        /* The fallback redraw uses the normal background path. */
         draw_full_scene(ctx, render, 0);
     }
 
     render->stand_dirty = 0;
-    render->left_wipe_pending = 0;
     render->left_interlace_pending = 0;
-    render->right_wipe_pending = 0;
     render->right_interlace_pending = 0;
 }
 
@@ -922,11 +871,8 @@ enum GameResult run_script_sjis(const ScriptContext *ctx)
     state = ctx->state;
 
     render.stand_dirty = 0;
-    render.bg_wipe_pending = 0;
     render.bg_interlace_pending = 0;
-    render.left_wipe_pending = 0;
     render.left_interlace_pending = 0;
-    render.right_wipe_pending = 0;
     render.right_interlace_pending = 0;
     script_line = 0;
 
@@ -960,11 +906,8 @@ enum GameResult run_script_sjis(const ScriptContext *ctx)
                                current_name, sizeof(current_name));
             render.scene_dirty = 1;
             render.stand_dirty = 0;
-            render.bg_wipe_pending = 0;
             render.bg_interlace_pending = 0;
-            render.left_wipe_pending = 0;
             render.left_interlace_pending = 0;
-            render.right_wipe_pending = 0;
             render.right_interlace_pending = 0;
             *ctx->request_scene_redraw = 0;
             *ctx->request_script_resume = 0;
@@ -993,8 +936,8 @@ enum GameResult run_script_sjis(const ScriptContext *ctx)
              *   control:  #label, #jump, #call, #return
              *   flags:    #setnum, #ifeq
              *   external: #pal, #bgm
-             *   display:  #bgwipe, #bginterlace, #leftwipe, #rightwipe,
-             *             #leftinterlace, #rightinterlace
+             *   display:  #bg, #bginterlace, #left, #leftinterlace,
+             *             #right, #rightinterlace
              * Other supported commands are routed through the same groups.
              */
 

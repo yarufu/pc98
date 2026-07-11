@@ -10,7 +10,7 @@
 #pal adv.pal
 #bg class
 #bgm PLAY.M
-#right character01 normal
+#right C01_N.SPR
 
 [サンプル子]
 こんにちは。ＡＤＶ９８．ＥＸＥのサンプルです。

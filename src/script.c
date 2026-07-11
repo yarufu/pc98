@@ -30,10 +30,8 @@ typedef struct {
 
 typedef struct {
     char last_bg_name[32];
-    enum StandId last_left_stand;
-    enum StandId last_right_stand;
-    enum FaceId last_left_face;
-    enum FaceId last_right_face;
+    char last_left_sprite[SPRITE_FILENAME_SIZE];
+    char last_right_sprite[SPRITE_FILENAME_SIZE];
     int scene_dirty;
     int stand_dirty;
     int bg_interlace_pending;
@@ -279,64 +277,13 @@ static void handle_choice_block(const ScriptContext *ctx, FILE *fp, int *script_
     set_flag_value(ctx, "choice", selected);
 }
 
-// 文字列を立ち絵IDへ
-static enum StandId parse_stand_id(const char *name)
-{
-    int stand_no;
-
-    if (strcmp(name, "none") == 0) {
-        return STAND_NONE;
-    }
-
-    if (strncmp(name, "character", 9) == 0) {
-        if (sscanf(name + 9, "%d", &stand_no) == 1) {
-            if (stand_no >= 1 && stand_no <= 20) {
-                return (enum StandId)stand_no;
-            }
-        }
-    }
-
-    /* 古いスクリプト用の別名。不要なら後で消してOK */
-    /*
-    if (strcmp(name, "anzai") == 0) {
-        return STAND_CHARACTER01;
-    }
-    if (strcmp(name, "mitsui") == 0) {
-        return STAND_CHARACTER02;
-    }
-    if (strcmp(name, "sakuragi") == 0) {
-        return STAND_CHARACTER03;
-    }
-    */
-
-    return STAND_NONE;
-}
-
-// 文字列を表情IDへ
-static enum FaceId parse_face_id(const char *name)
-{
-    if (strcmp(name, "happy") == 0) {
-        return FACE_HAPPY;
-    }
-    if (strcmp(name, "angry") == 0) {
-        return FACE_ANGRY;
-    }
-    if (strcmp(name, "surprised") == 0) {
-        return FACE_SURPRISED;
-    }
-
-    return FACE_NORMAL;
-}
-
 // コマンド行を読む関数
 static void __attribute__((optimize("Os")))
 process_command_line(const ScriptContext *ctx,
                      const char *line,
                      char *bg_name,
-                     enum StandId *left_stand,
-                     enum FaceId *left_face,
-                     enum StandId *right_stand,
-                     enum FaceId *right_face)
+                     char *left_sprite,
+                     char *right_sprite)
 {
     char cmd[32];
     char arg1[32];
@@ -392,24 +339,24 @@ process_command_line(const ScriptContext *ctx,
 
     if (strcmp(cmd, "#left") == 0 || strcmp(cmd, "#leftinterlace") == 0) {
         if (count >= 2) {
-            *left_stand = parse_stand_id(arg1);
-        }
-        if (count >= 3) {
-            *left_face = parse_face_id(arg2);
-        } else {
-            *left_face = FACE_NORMAL;
+            if (strcmp(arg1, "none") == 0) {
+                left_sprite[0] = '\0';
+            } else {
+                strncpy(left_sprite, arg1, SPRITE_FILENAME_SIZE - 1);
+                left_sprite[SPRITE_FILENAME_SIZE - 1] = '\0';
+            }
         }
         return;
     }
 
     if (strcmp(cmd, "#right") == 0 || strcmp(cmd, "#rightinterlace") == 0) {
         if (count >= 2) {
-            *right_stand = parse_stand_id(arg1);
-        }
-        if (count >= 3) {
-            *right_face = parse_face_id(arg2);
-        } else {
-            *right_face = FACE_NORMAL;
+            if (strcmp(arg1, "none") == 0) {
+                right_sprite[0] = '\0';
+            } else {
+                strncpy(right_sprite, arg1, SPRITE_FILENAME_SIZE - 1);
+                right_sprite[SPRITE_FILENAME_SIZE - 1] = '\0';
+            }
         }
         return;
     }
@@ -681,10 +628,8 @@ handle_display_command(const ScriptContext *ctx,
                        SceneRenderState *render)
 {
     char old_bg_name[32];
-    enum StandId old_left_stand;
-    enum FaceId old_left_face;
-    enum StandId old_right_stand;
-    enum FaceId old_right_face;
+    char old_left_sprite[SPRITE_FILENAME_SIZE];
+    char old_right_sprite[SPRITE_FILENAME_SIZE];
     GameState *state;
 
     if (strcmp(command->cmd, "#bg") != 0 &&
@@ -700,10 +645,8 @@ handle_display_command(const ScriptContext *ctx,
     state = ctx->state;
     strncpy(old_bg_name, state->bg_name, sizeof(old_bg_name) - 1);
     old_bg_name[sizeof(old_bg_name) - 1] = '\0';
-    old_left_stand = state->left_stand;
-    old_left_face = state->left_face;
-    old_right_stand = state->right_stand;
-    old_right_face = state->right_face;
+    strcpy(old_left_sprite, state->left_sprite);
+    strcpy(old_right_sprite, state->right_sprite);
 
     if (strcmp(command->cmd, "#bginterlace") == 0) {
         render->bg_interlace_pending = 1;
@@ -730,17 +673,14 @@ handle_display_command(const ScriptContext *ctx,
     }
 
     process_command_line(ctx, line, state->bg_name,
-                         &state->left_stand, &state->left_face,
-                         &state->right_stand, &state->right_face);
+                         state->left_sprite, state->right_sprite);
 
     if (render->bg_interlace_pending ||
         strcmp(state->bg_name, old_bg_name) != 0) {
         render->scene_dirty = 1;
         render->stand_dirty = 0;
-    } else if (state->left_stand != old_left_stand ||
-               state->left_face != old_left_face ||
-               state->right_stand != old_right_stand ||
-               state->right_face != old_right_face ||
+    } else if (strcmp(state->left_sprite, old_left_sprite) != 0 ||
+               strcmp(state->right_sprite, old_right_sprite) != 0 ||
                render->left_interlace_pending ||
                render->right_interlace_pending) {
         render->stand_dirty = 1;
@@ -763,27 +703,21 @@ draw_full_scene(const ScriptContext *ctx,
         ctx->draw_background(state->bg_name);
     }
     if (render->left_interlace_pending) {
-        ctx->draw_stand_interlace(state->left_stand, state->left_face,
-                                  STAND_LEFT_X, STAND_Y, 0);
+        ctx->draw_stand_interlace(state->left_sprite, STAND_LEFT_X, STAND_Y);
     } else {
-        ctx->draw_stand(state->left_stand, state->left_face,
-                        STAND_LEFT_X, STAND_Y, 0);
+        ctx->draw_stand(state->left_sprite, STAND_LEFT_X, STAND_Y);
     }
     if (render->right_interlace_pending) {
-        ctx->draw_stand_interlace(state->right_stand, state->right_face,
-                                  STAND_RIGHT_X, STAND_Y, 1);
+        ctx->draw_stand_interlace(state->right_sprite, STAND_RIGHT_X, STAND_Y);
     } else {
-        ctx->draw_stand(state->right_stand, state->right_face,
-                        STAND_RIGHT_X, STAND_Y, 1);
+        ctx->draw_stand(state->right_sprite, STAND_RIGHT_X, STAND_Y);
     }
 
     strncpy(render->last_bg_name, state->bg_name,
             sizeof(render->last_bg_name) - 1);
     render->last_bg_name[sizeof(render->last_bg_name) - 1] = '\0';
-    render->last_left_stand = state->left_stand;
-    render->last_left_face = state->left_face;
-    render->last_right_stand = state->right_stand;
-    render->last_right_face = state->right_face;
+    strcpy(render->last_left_sprite, state->left_sprite);
+    strcpy(render->last_right_sprite, state->right_sprite);
 }
 
 static void __attribute__((optimize("Os")))
@@ -791,6 +725,8 @@ redraw_scene_if_needed(const ScriptContext *ctx,
                        SceneRenderState *render)
 {
     GameState *state;
+    int left_needs_redraw;
+    int right_needs_redraw;
 
     state = ctx->state;
     if (render->scene_dirty ||
@@ -808,36 +744,31 @@ redraw_scene_if_needed(const ScriptContext *ctx,
         return;
     }
 
-    if ((state->left_stand != render->last_left_stand ||
-         state->left_face != render->last_left_face) &&
-        state->right_stand == render->last_right_stand &&
-        state->right_face == render->last_right_face) {
+    left_needs_redraw =
+        strcmp(state->left_sprite, render->last_left_sprite) != 0 ||
+        render->left_interlace_pending;
+    right_needs_redraw =
+        strcmp(state->right_sprite, render->last_right_sprite) != 0 ||
+        render->right_interlace_pending;
+
+    if (left_needs_redraw && !right_needs_redraw) {
         if (render->left_interlace_pending) {
             ctx->refresh_left_stand_only_interlace(state->bg_name,
-                                                   state->left_stand,
-                                                   state->left_face);
+                                                   state->left_sprite);
         } else {
             ctx->refresh_left_stand_only(state->bg_name,
-                                         state->left_stand,
-                                         state->left_face);
+                                         state->left_sprite);
         }
-        render->last_left_stand = state->left_stand;
-        render->last_left_face = state->left_face;
-    } else if (state->left_stand == render->last_left_stand &&
-               state->left_face == render->last_left_face &&
-               (state->right_stand != render->last_right_stand ||
-                state->right_face != render->last_right_face)) {
+        strcpy(render->last_left_sprite, state->left_sprite);
+    } else if (!left_needs_redraw && right_needs_redraw) {
         if (render->right_interlace_pending) {
             ctx->refresh_right_stand_only_interlace(state->bg_name,
-                                                    state->right_stand,
-                                                    state->right_face);
+                                                    state->right_sprite);
         } else {
             ctx->refresh_right_stand_only(state->bg_name,
-                                          state->right_stand,
-                                          state->right_face);
+                                          state->right_sprite);
         }
-        render->last_right_stand = state->right_stand;
-        render->last_right_face = state->right_face;
+        strcpy(render->last_right_sprite, state->right_sprite);
     } else {
         /* The fallback redraw uses the normal background path. */
         draw_full_scene(ctx, render, 0);
@@ -889,17 +820,11 @@ enum GameResult run_script_sjis(const ScriptContext *ctx)
     if (!*ctx->request_script_resume) {
         memset(ctx->flags, 0, sizeof(GameFlag) * MAX_FLAGS);
         memset(state, 0, sizeof(*state));
-        state->left_stand = STAND_NONE;
-        state->right_stand = STAND_NONE;
-        state->left_face = FACE_NORMAL;
-        state->right_face = FACE_NORMAL;
     }
 
     render.last_bg_name[0] = '\0';
-    render.last_left_stand = STAND_NONE;
-    render.last_right_stand = STAND_NONE;
-    render.last_left_face = FACE_NORMAL;
-    render.last_right_face = FACE_NORMAL;
+    render.last_left_sprite[0] = '\0';
+    render.last_right_sprite[0] = '\0';
     render.scene_dirty = 1;
 
     fp = fopen("script.txt", "rb");

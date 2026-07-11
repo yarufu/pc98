@@ -85,38 +85,27 @@ static void ui_draw_background_interlace(const char *bg_name);
 static void ui_draw_message_window(void);
 static void ui_set_message_box(int x0, int y0, int x1, int y1);
 static int ui_get_message_line_chars(void);
-static const char *ui_get_stand_sprite_path(enum StandId stand_id,
-                                            enum FaceId face_id,
-                                            int facing_left);
-static void ui_draw_stand(enum StandId stand_id, enum FaceId face_id,
-                          int x, int y, int facing_left);
-static void ui_draw_stand_interlace(enum StandId stand_id, enum FaceId face_id,
-                                    int x, int y, int facing_left);
+static void ui_draw_stand(const char *sprite_file, int x, int y);
+static void ui_draw_stand_interlace(const char *sprite_file, int x, int y);
 static int ui_draw_message_page_jis(const uint16_t *name, int name_len,
                                     const uint16_t *jis_codes, int count,
                                     int start_index);
 static void ui_draw_message_jis(const uint16_t *name, int name_len,
                                 const uint16_t *jis_codes, int count);
-static void ui_draw_current_stands(enum StandId left_stand,
-                                   enum FaceId left_face,
-                                   enum StandId right_stand,
-                                   enum FaceId right_face);
+static void ui_draw_current_stands(const char *left_sprite,
+                                   const char *right_sprite);
 static void reset_choice_lines(void);
 static void store_choice_line(int index, const char *line) __attribute__((noinline));
 static void trim_leading_spaces(char *str);
 static void ui_restore_stand_background_rect(int x0, int y0, int x1, int y1, const char *bg_name);
 static void ui_refresh_left_stand_only(const char *bg_name,
-                                       enum StandId left_stand,
-                                       enum FaceId left_face);
+                                       const char *sprite_file);
 static void ui_refresh_left_stand_only_interlace(const char *bg_name,
-                                                 enum StandId left_stand,
-                                                 enum FaceId left_face);
+                                                 const char *sprite_file);
 static void ui_refresh_right_stand_only(const char *bg_name,
-                                        enum StandId right_stand,
-                                        enum FaceId right_face);
+                                        const char *sprite_file);
 static void ui_refresh_right_stand_only_interlace(const char *bg_name,
-                                                  enum StandId right_stand,
-                                                  enum FaceId right_face);
+                                                  const char *sprite_file);
 
 static void restore_palette_after_load(void);
 static void restore_scene_after_load(void);
@@ -316,144 +305,71 @@ static void ui_restore_stand_background_rect(int x0, int y0, int x1, int y1, con
 }
 
 static void ui_refresh_left_stand_only(const char *bg_name,
-                                       enum StandId left_stand,
-                                       enum FaceId left_face)
+                                       const char *sprite_file)
 {
     ui_restore_stand_background_rect(STAND_LEFT_X,
                                      STAND_Y,
                                      STAND_LEFT_X + STAND_W - 1,
                                      STAND_Y + STAND_H - 1,
                                      bg_name);
-    ui_draw_stand(left_stand, left_face, STAND_LEFT_X, STAND_Y, 0);
+    ui_draw_stand(sprite_file, STAND_LEFT_X, STAND_Y);
 }
 
 static void ui_refresh_left_stand_only_interlace(const char *bg_name,
-                                                 enum StandId left_stand,
-                                                 enum FaceId left_face)
+                                                 const char *sprite_file)
 {
     ui_restore_stand_background_rect(STAND_LEFT_X,
                                      STAND_Y,
                                      STAND_LEFT_X + STAND_W - 1,
                                      STAND_Y + STAND_H - 1,
                                      bg_name);
-    ui_draw_stand_interlace(left_stand, left_face, STAND_LEFT_X, STAND_Y, 0);
+    ui_draw_stand_interlace(sprite_file, STAND_LEFT_X, STAND_Y);
 }
 
 static void ui_refresh_right_stand_only(const char *bg_name,
-                                        enum StandId right_stand,
-                                        enum FaceId right_face)
+                                        const char *sprite_file)
 {
     ui_restore_stand_background_rect(STAND_RIGHT_X,
                                      STAND_Y,
                                      STAND_RIGHT_X + STAND_W - 1,
                                      STAND_Y + STAND_H - 1,
                                      bg_name);
-    ui_draw_stand(right_stand, right_face, STAND_RIGHT_X, STAND_Y, 1);
+    ui_draw_stand(sprite_file, STAND_RIGHT_X, STAND_Y);
 }
 
 static void ui_refresh_right_stand_only_interlace(const char *bg_name,
-                                                  enum StandId right_stand,
-                                                  enum FaceId right_face)
+                                                  const char *sprite_file)
 {
     ui_restore_stand_background_rect(STAND_RIGHT_X,
                                      STAND_Y,
                                      STAND_RIGHT_X + STAND_W - 1,
                                      STAND_Y + STAND_H - 1,
                                      bg_name);
-    ui_draw_stand_interlace(right_stand, right_face, STAND_RIGHT_X, STAND_Y, 1);
+    ui_draw_stand_interlace(sprite_file, STAND_RIGHT_X, STAND_Y);
 }
 
-static const char *ui_get_stand_sprite_path(enum StandId stand_id,
-                                            enum FaceId face_id,
-                                            int facing_left)
+static void ui_draw_stand(const char *sprite_file, int x, int y)
 {
-    static const char face_suffixes[] = {
-        'n', /* FACE_NORMAL */
-        'h', /* FACE_HAPPY */
-        'a', /* FACE_ANGRY */
-        's'  /* FACE_SURPRISED */
-    };
-    static char path[16];
-    int stand_no;
-    char face_suffix;
-
-    (void)facing_left;
-
-    if (stand_id <= STAND_NONE || stand_id > STAND_CHARACTER20) {
-        return 0;
-    }
-
-    if (face_id < FACE_NORMAL || face_id > FACE_SURPRISED) {
-        face_suffix = 'n';
-    } else {
-        face_suffix = face_suffixes[face_id];
-    }
-
-    stand_no = (int)stand_id;
-    path[0] = 'c';
-    path[1] = (char)('0' + stand_no / 10);
-    path[2] = (char)('0' + stand_no % 10);
-    path[3] = '_';
-    path[4] = face_suffix;
-    path[5] = '.';
-    path[6] = 's';
-    path[7] = 'p';
-    path[8] = 'r';
-    path[9] = '\0';
-
-    return path;
-}
-
-static void ui_draw_stand(enum StandId stand_id, enum FaceId face_id,
-                          int x, int y, int facing_left)
-{
-
-    const char *sprite_path;
-
-    if (stand_id == STAND_NONE) {
+    if (sprite_file == 0 || sprite_file[0] == '\0') {
         return;
     }
 
-
-    /*
-     * 立ち絵ファイルのパスを決めてから透過付きで描画します。
-     * 透明色 0 を飛ばすので、背景画像の上へ自然に重なります。
-     */
-    sprite_path = ui_get_stand_sprite_path(stand_id, face_id, facing_left);
-    if (sprite_path == 0) {
-        return;
-    }
-
-
-
-    if (!graph98_draw_sprite_file_trans(sprite_path, x, y, 0)) {
-        debug_log("sprite load failed: %s", sprite_path);
+    if (!graph98_draw_sprite_file_trans(sprite_file, x, y, 0)) {
+        debug_log("sprite load failed: %s", sprite_file);
 
         graph98_boxfill(x + 20, y + 20, x + 180, y + 80, 4);
         graph98_draw_string(x + 30, y + 45, "SPRITE LOAD NG", 15);
-
     }
-
-
-
 }
 
-static void ui_draw_stand_interlace(enum StandId stand_id, enum FaceId face_id,
-                                    int x, int y, int facing_left)
+static void ui_draw_stand_interlace(const char *sprite_file, int x, int y)
 {
-    const char *sprite_path;
-
-    if (stand_id == STAND_NONE) {
+    if (sprite_file == 0 || sprite_file[0] == '\0') {
         return;
     }
 
-    sprite_path = ui_get_stand_sprite_path(stand_id, face_id, facing_left);
-    if (sprite_path == 0) {
-        return;
-    }
-
-    if (!graph98_draw_sprite_file_trans_interlace(sprite_path, x, y, 0)) {
-        debug_log("sprite interlace load failed: %s", sprite_path);
+    if (!graph98_draw_sprite_file_trans_interlace(sprite_file, x, y, 0)) {
+        debug_log("sprite interlace load failed: %s", sprite_file);
         graph98_boxfill(x + 20, y + 20, x + 180, y + 80, 4);
         graph98_draw_string(x + 30, y + 45, "SPRITE LOAD NG", 15);
     }
@@ -678,8 +594,7 @@ static void ui_redraw_current_scene_from_state(void)
 {
     ui_draw_background(g_state.bg_name);
 
-    ui_draw_current_stands(g_state.left_stand, g_state.left_face,
-                           g_state.right_stand, g_state.right_face);
+    ui_draw_current_stands(g_state.left_sprite, g_state.right_sprite);
 }
 
 /* メッセージ非表示中の待機関数 */
@@ -864,13 +779,11 @@ static void request_loaded_game_resume(void)
 }
 
 // 立ち絵を今の状態で描く関数
-static void ui_draw_current_stands(enum StandId left_stand,
-                                   enum FaceId left_face,
-                                   enum StandId right_stand,
-                                   enum FaceId right_face)
+static void ui_draw_current_stands(const char *left_sprite,
+                                   const char *right_sprite)
 {
-    ui_draw_stand(left_stand, left_face, STAND_LEFT_X, STAND_Y, 0);
-    ui_draw_stand(right_stand, right_face, STAND_RIGHT_X, STAND_Y, 1);
+    ui_draw_stand(left_sprite, STAND_LEFT_X, STAND_Y);
+    ui_draw_stand(right_sprite, STAND_RIGHT_X, STAND_Y);
 }
 
 static void app_cleanup(void)

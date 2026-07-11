@@ -5,7 +5,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#define SAVE_VERSION 2
+#define SAVE_VERSION 3
 
 typedef struct {
     char magic[8];
@@ -106,6 +106,9 @@ int load_game_state(const char *filename,
                   SAVE_VERSION);
         return 0;
     }
+
+    save_data.state.left_sprite[SPRITE_FILENAME_SIZE - 1] = '\0';
+    save_data.state.right_sprite[SPRITE_FILENAME_SIZE - 1] = '\0';
 
     *state = save_data.state;
     memcpy(flags, save_data.flags, sizeof(save_data.flags));

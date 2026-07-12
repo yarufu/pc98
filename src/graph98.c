@@ -38,7 +38,6 @@
 #define GRAPH98_G98_INTERLACE_GROUP_LINES 32u
 #define GRAPH98_G98_INTERLACE_SWEEP_LINES 8u
 
-#define GRAPH98_SPRITE_CHUNK_LINES 32u
 #define GRAPH98_SPRITE_MAX_WIDTH 256u
 #define GRAPH98_SPRITE_INTERLACE_MAX_HEIGHT 300u
 #define GRAPH98_SPRITE_INTERLACE_PERIOD 2u
@@ -46,8 +45,7 @@
 #define GRAPH98_SPRITE_INTERLACE_GROUP_LINES 32u
 #define GRAPH98_SPRITE_INTERLACE_SWEEP_LINES 8u
 
-#define GRAPH98_IMAGE_WORK_SIZE \
-    (GRAPH98_SPRITE_MAX_WIDTH * GRAPH98_SPRITE_CHUNK_LINES)
+#define GRAPH98_IMAGE_WORK_SIZE 8192u
 #define GRAPH98_G98_CHUNK_LINES \
     (GRAPH98_IMAGE_WORK_SIZE / GRAPH98_BYTES_PER_LINE)
 #define GRAPH98_G98_RECT_CHUNK_LINES \
@@ -58,6 +56,8 @@ static uint8_t graph98_image_work[GRAPH98_IMAGE_WORK_SIZE];
 
 _Static_assert(GRAPH98_IMAGE_WORK_SIZE == 8192u,
                "image work buffer must be 8 KB");
+_Static_assert(GRAPH98_IMAGE_WORK_SIZE >= GRAPH98_SPRITE_MAX_WIDTH,
+               "sprite chunk must contain at least one line");
 _Static_assert(GRAPH98_G98_CHUNK_LINES >= 1u,
                "G98 chunk must contain at least one line");
 _Static_assert(GRAPH98_G98_RECT_CHUNK_LINES >= 1u,
@@ -1151,6 +1151,7 @@ int graph98_draw_sprite_file_trans(const char *path, int x, int y,
     struct graph98_sprite_header header;
     FILE *fp;
     uint16_t src_y;
+    uint16_t max_chunk_lines;
 
     fp = fopen(path, "rb");
     if (fp == 0) {
@@ -1185,6 +1186,9 @@ int graph98_draw_sprite_file_trans(const char *path, int x, int y,
         return 0;
     }
 
+    max_chunk_lines =
+        (uint16_t)(GRAPH98_IMAGE_WORK_SIZE / header.width);
+
     transparent_color &= 0x0Fu;
 
     src_y = 0;
@@ -1193,8 +1197,8 @@ int graph98_draw_sprite_file_trans(const char *path, int x, int y,
         uint16_t line;
 
         chunk_lines = (uint16_t)(header.height - src_y);
-        if (chunk_lines > GRAPH98_SPRITE_CHUNK_LINES) {
-            chunk_lines = GRAPH98_SPRITE_CHUNK_LINES;
+        if (chunk_lines > max_chunk_lines) {
+            chunk_lines = max_chunk_lines;
         }
 
         if (fread(graph98_image_work, header.width, chunk_lines, fp) !=

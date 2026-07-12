@@ -33,7 +33,6 @@
 #define GRAPH98_G98_MAGIC_2 '8'
 #define GRAPH98_G98_MAGIC_3 'B'
 #define GRAPH98_G98_VERSION 1u
-#define GRAPH98_G98_CHUNK_LINES 32u
 #define GRAPH98_G98_INTERLACE_PERIOD 2u
 #define GRAPH98_G98_INTERLACE_BOTTOM_OFFSET 1u
 #define GRAPH98_G98_INTERLACE_GROUP_LINES 32u
@@ -49,6 +48,8 @@
 
 #define GRAPH98_IMAGE_WORK_SIZE \
     (GRAPH98_SPRITE_MAX_WIDTH * GRAPH98_SPRITE_CHUNK_LINES)
+#define GRAPH98_G98_CHUNK_LINES \
+    (GRAPH98_IMAGE_WORK_SIZE / GRAPH98_BYTES_PER_LINE)
 #define GRAPH98_G98_RECT_CHUNK_LINES \
     (GRAPH98_IMAGE_WORK_SIZE / GRAPH98_BYTES_PER_LINE)
 
@@ -57,6 +58,8 @@ static uint8_t graph98_image_work[GRAPH98_IMAGE_WORK_SIZE];
 
 _Static_assert(GRAPH98_IMAGE_WORK_SIZE == 8192u,
                "image work buffer must be 8 KB");
+_Static_assert(GRAPH98_G98_CHUNK_LINES >= 1u,
+               "G98 chunk must contain at least one line");
 _Static_assert(GRAPH98_G98_RECT_CHUNK_LINES >= 1u,
                "G98 rect chunk must contain at least one line");
 _Static_assert(GRAPH98_BYTES_PER_LINE * GRAPH98_G98_RECT_CHUNK_LINES <=

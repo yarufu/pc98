@@ -2,14 +2,6 @@
 
 #include "debug.h"
 
-#ifndef USE_EGC
-#define USE_EGC 0
-#endif
-
-#if USE_EGC
-#include "egc98.h"
-#endif
-
 #include <stdio.h>
 #include <stdint.h>
 
@@ -618,26 +610,6 @@ void graph98_boxfill(int x0, int y0, int x1, int y1, unsigned char color)
     }
 
     color &= 0x0Fu;
-
-#if USE_EGC
-    {
-        uint16_t width;
-        uint16_t height;
-
-        width = (uint16_t)(x1 - x0 + 1);
-        height = (uint16_t)(y1 - y0 + 1);
-
-        if (width != 0u && height != 0u &&
-            x0 >= 0 && y0 >= 0 &&
-            x1 < GRAPH98_WIDTH && y1 < GRAPH98_HEIGHT &&
-            (x0 & 15) == 0 && (width & 15u) == 0u &&
-            egc98_bios_flag_present() &&
-            egc98_boxfill_aligned16((uint16_t)x0, (uint16_t)y0,
-                                    width, height, color) == EGC98_DRAW_OK) {
-            return;
-        }
-    }
-#endif
 
     /*
      * PC-98 の 16 色画面は 8 ドットで 1 バイトです。

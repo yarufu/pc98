@@ -15,6 +15,11 @@
 
 #define GRAPH98_PORT_COLOR_MODE 0x006A
 
+#define GRAPH98_PORT_DISPLAY_PAGE 0x00A4
+#define GRAPH98_PORT_ACCESS_PAGE  0x00A6
+#define GRAPH98_PAGE_FRONT 0x00u
+#define GRAPH98_PAGE_BACK  0x01u
+
 #define GRAPH98_PORT_PALETTE_INDEX 0x00A8
 #define GRAPH98_PORT_PALETTE_G     0x00AA
 #define GRAPH98_PORT_PALETTE_R     0x00AC
@@ -27,8 +32,16 @@
 #define GRAPH98_G98_VERSION 1u
 #define GRAPH98_G98_INTERLACE_PERIOD 2u
 #define GRAPH98_G98_INTERLACE_BOTTOM_OFFSET 1u
-#define GRAPH98_G98_INTERLACE_GROUP_LINES 32u
-#define GRAPH98_G98_INTERLACE_SWEEP_LINES 8u
+#define GRAPH98_G98_INTERLACE_LINES_PER_SIDE 4u
+#define GRAPH98_G98_INTERLACE_STAGE_LINES \
+    (GRAPH98_G98_INTERLACE_LINES_PER_SIDE * 2u)
+#define GRAPH98_G98_INTERLACE_PLANE_BYTES \
+    (GRAPH98_BYTES_PER_LINE * GRAPH98_G98_INTERLACE_STAGE_LINES)
+#define GRAPH98_G98_INTERLACE_STAGE_BYTES \
+    (GRAPH98_G98_INTERLACE_PLANE_BYTES * 4u)
+#define GRAPH98_G98_INTERLACE_STAGE_COUNT \
+    (GRAPH98_HEIGHT / \
+     (GRAPH98_G98_INTERLACE_LINES_PER_SIDE * GRAPH98_G98_INTERLACE_PERIOD))
 
 #define GRAPH98_SPRITE_MAX_WIDTH 256u
 #define GRAPH98_SPRITE_INTERLACE_MAX_HEIGHT 300u
@@ -60,9 +73,14 @@ _Static_assert(GRAPH98_BYTES_PER_LINE * GRAPH98_G98_RECT_CHUNK_LINES <=
 _Static_assert(GRAPH98_BYTES_PER_LINE * GRAPH98_G98_CHUNK_LINES <=
                    GRAPH98_IMAGE_WORK_SIZE,
                "G98 chunk exceeds image work buffer");
-_Static_assert(GRAPH98_BYTES_PER_LINE * GRAPH98_G98_INTERLACE_GROUP_LINES <=
-                   GRAPH98_IMAGE_WORK_SIZE,
-               "G98 interlace group exceeds image work buffer");
+_Static_assert(GRAPH98_G98_INTERLACE_STAGE_LINES == 8u,
+               "G98 interlace stage must contain eight lines");
+_Static_assert(GRAPH98_G98_INTERLACE_STAGE_BYTES == 2560u,
+               "G98 interlace stage must contain 2,560 bytes");
+_Static_assert(GRAPH98_G98_INTERLACE_STAGE_BYTES <= GRAPH98_IMAGE_WORK_SIZE,
+               "G98 interlace stage exceeds image work buffer");
+_Static_assert(GRAPH98_G98_INTERLACE_STAGE_COUNT == 50u,
+               "G98 interlace must complete in 50 stages");
 _Static_assert(GRAPH98_SPRITE_MAX_WIDTH *
                    GRAPH98_SPRITE_INTERLACE_GROUP_LINES <=
                    GRAPH98_IMAGE_WORK_SIZE,
@@ -183,7 +201,13 @@ static void graph98_out8(uint16_t port, uint8_t value)
         "outb %%al, %%dx"
         :
         : "a"(value), "d"(port)
-        : "cc");
+        : "cc", "memory");
+}
+
+void graph98_restore_default_pages(void)
+{
+    graph98_out8(GRAPH98_PORT_ACCESS_PAGE, GRAPH98_PAGE_FRONT);
+    graph98_out8(GRAPH98_PORT_DISPLAY_PAGE, GRAPH98_PAGE_FRONT);
 }
 
 static uint8_t graph98_rgb8_to_4bit(uint8_t c)
@@ -347,11 +371,11 @@ static void graph98_clear_vram(void)
 void graph98_init(void)
 {
     /*
-     * T98-Next で動作確認済み。
-     * ただし、実機では機種差の可能性があるため、
-     * 同じ BIOS 呼び出しや I/O ポート設定がそのまま通らない場合があります。
+     * T98-NEXT、PC-9821V13、PC-9821Ra43で動作確認済み。
+     * 標準640x400・16色以外のモードは対象外です。
      */
     graph98_set_mode_640x400_16color();
+    graph98_restore_default_pages();
     graph98_display_on();
     graph98_out8(GRAPH98_PORT_COLOR_MODE, 0x01);
     graph98_clear_vram();
@@ -956,164 +980,153 @@ int graph98_load_g98_rect(const char *path, int x0, int y0, int x1, int y1)
     return ok;
 }
 
-static int __attribute__((noinline, optimize("Os")))
-graph98_copy_plane_interlace_range_from_file(
-    FILE *fp,
-    volatile uint8_t __far *plane,
-    unsigned long plane_start,
-    uint16_t start_y,
-    uint16_t end_y,
-    int reverse)
+static void __attribute__((noinline, optimize("Os")))
+graph98_read_interlace_stage_plane(volatile uint8_t __far *plane,
+                                   uint16_t top_y,
+                                   uint16_t bottom_y,
+                                   uint16_t work_start)
 {
-    uint16_t lines;
-    unsigned long pos;
-    int line;
-    int line_end;
-    int line_step;
+    uint16_t line_index;
 
-    if (end_y <= start_y) {
-        return 1;
-    }
-
-    lines = (uint16_t)(end_y - start_y);
-    if (lines > GRAPH98_G98_INTERLACE_GROUP_LINES) {
-        return 0;
-    }
-
-    pos = plane_start + (unsigned long)start_y * GRAPH98_BYTES_PER_LINE;
-    if (fseek(fp, pos, SEEK_SET) != 0) {
-        return 0;
-    }
-
-    if (fread(graph98_image_work, GRAPH98_BYTES_PER_LINE, lines, fp) != lines) {
-        return 0;
-    }
-
-    /*
-     * 画面高、帯幅、移動量はすべて8の倍数なので、各範囲は偶数Yから
-     * 始まり偶数ライン数になる。正順の0,2,...が画面の偶数ライン、
-     * 逆順の末尾,末尾-2,...が画面の奇数ラインになる。
-     */
-    if (reverse) {
-        line = (int)lines - (int)GRAPH98_G98_INTERLACE_BOTTOM_OFFSET;
-        line_end = -(int)GRAPH98_G98_INTERLACE_BOTTOM_OFFSET;
-        line_step = -(int)GRAPH98_G98_INTERLACE_PERIOD;
-    } else {
-        line = 0;
-        line_end = (int)lines;
-        line_step = (int)GRAPH98_G98_INTERLACE_PERIOD;
-    }
-
-    while (line != line_end) {
-        uint16_t src_y;
-        uint16_t src_offset;
-        uint16_t dst_offset;
+    for (line_index = 0;
+         line_index < GRAPH98_G98_INTERLACE_LINES_PER_SIDE;
+         ++line_index) {
+        uint16_t top_offset;
+        uint16_t bottom_offset;
+        uint16_t top_work;
+        uint16_t bottom_work;
         uint16_t i;
 
-        src_y = (uint16_t)(start_y + (uint16_t)line);
-        src_offset = (uint16_t)((uint16_t)line *
-                                GRAPH98_BYTES_PER_LINE);
-        dst_offset = (uint16_t)(src_y * GRAPH98_BYTES_PER_LINE);
-        for (i = 0; i < GRAPH98_BYTES_PER_LINE; ++i) {
-            plane[(uint16_t)(dst_offset + i)] =
-                graph98_image_work[(uint16_t)(src_offset + i)];
-        }
-        line += line_step;
-    }
+        top_offset = (uint16_t)(
+            (top_y + line_index * GRAPH98_G98_INTERLACE_PERIOD) *
+            GRAPH98_BYTES_PER_LINE);
+        bottom_offset = (uint16_t)(
+            (bottom_y - line_index * GRAPH98_G98_INTERLACE_PERIOD) *
+            GRAPH98_BYTES_PER_LINE);
+        top_work = (uint16_t)(work_start +
+                              line_index * GRAPH98_BYTES_PER_LINE);
+        bottom_work = (uint16_t)(work_start +
+                                 (GRAPH98_G98_INTERLACE_LINES_PER_SIDE +
+                                  line_index) * GRAPH98_BYTES_PER_LINE);
 
-    return 1;
+        for (i = 0; i < GRAPH98_BYTES_PER_LINE; ++i) {
+            graph98_image_work[(uint16_t)(top_work + i)] =
+                plane[(uint16_t)(top_offset + i)];
+            graph98_image_work[(uint16_t)(bottom_work + i)] =
+                plane[(uint16_t)(bottom_offset + i)];
+        }
+    }
+}
+
+static void __attribute__((noinline, optimize("Os")))
+graph98_write_interlace_stage_plane(volatile uint8_t __far *plane,
+                                    uint16_t top_y,
+                                    uint16_t bottom_y,
+                                    uint16_t work_start)
+{
+    uint16_t line_index;
+
+    for (line_index = 0;
+         line_index < GRAPH98_G98_INTERLACE_LINES_PER_SIDE;
+         ++line_index) {
+        uint16_t top_offset;
+        uint16_t bottom_offset;
+        uint16_t top_work;
+        uint16_t bottom_work;
+        uint16_t i;
+
+        top_offset = (uint16_t)(
+            (top_y + line_index * GRAPH98_G98_INTERLACE_PERIOD) *
+            GRAPH98_BYTES_PER_LINE);
+        bottom_offset = (uint16_t)(
+            (bottom_y - line_index * GRAPH98_G98_INTERLACE_PERIOD) *
+            GRAPH98_BYTES_PER_LINE);
+        top_work = (uint16_t)(work_start +
+                              line_index * GRAPH98_BYTES_PER_LINE);
+        bottom_work = (uint16_t)(work_start +
+                                 (GRAPH98_G98_INTERLACE_LINES_PER_SIDE +
+                                  line_index) * GRAPH98_BYTES_PER_LINE);
+
+        for (i = 0; i < GRAPH98_BYTES_PER_LINE; ++i) {
+            plane[(uint16_t)(top_offset + i)] =
+                graph98_image_work[(uint16_t)(top_work + i)];
+            plane[(uint16_t)(bottom_offset + i)] =
+                graph98_image_work[(uint16_t)(bottom_work + i)];
+        }
+    }
 }
 
 int __attribute__((optimize("Os")))
 graph98_load_g98_interlace(const char *path)
 {
-    struct graph98_g98_header header;
-    FILE *fp;
-    unsigned long header_size;
-    unsigned long plane_size;
-    uint16_t sweep_y;
-    int plane_index;
-    volatile uint8_t __far *planes[4];
+    uint16_t stage;
+    int ok;
 
-    fp = fopen(path, "rb");
-    if (fp == 0) {
-        return 0;
+    ok = 0;
+
+    if (path == 0 || path[0] == '\0') {
+        goto cleanup;
     }
 
-    if (!graph98_read_g98_header(fp, &header)) {
-        fclose(fp);
-        return 0;
+    /* The displayed page stays at page 0 for the whole effect. */
+    graph98_out8(GRAPH98_PORT_DISPLAY_PAGE, GRAPH98_PAGE_FRONT);
+    graph98_out8(GRAPH98_PORT_ACCESS_PAGE, GRAPH98_PAGE_BACK);
+
+    /* All file I/O finishes while the complete background is built here. */
+    if (!graph98_load_g98(path)) {
+        goto cleanup;
     }
 
-    if (!graph98_is_valid_g98_header(&header)) {
-        fclose(fp);
-        return 0;
-    }
+    graph98_out8(GRAPH98_PORT_ACCESS_PAGE, GRAPH98_PAGE_FRONT);
 
-    planes[0] = GRAPH98_VRAM_BLUE;
-    planes[1] = GRAPH98_VRAM_RED;
-    planes[2] = GRAPH98_VRAM_GREEN;
-    planes[3] = GRAPH98_VRAM_INTENS;
+    for (stage = 0; stage < GRAPH98_G98_INTERLACE_STAGE_COUNT; ++stage) {
+        uint16_t top_y;
+        uint16_t bottom_y;
 
-    header_size = 13UL;
-    plane_size = (unsigned long)GRAPH98_BYTES_PER_LINE * GRAPH98_HEIGHT;
-    sweep_y = 0;
+        top_y = (uint16_t)(
+            stage * GRAPH98_G98_INTERLACE_LINES_PER_SIDE *
+            GRAPH98_G98_INTERLACE_PERIOD);
+        bottom_y = (uint16_t)(
+            (GRAPH98_HEIGHT - GRAPH98_G98_INTERLACE_BOTTOM_OFFSET) -
+            stage * GRAPH98_G98_INTERLACE_LINES_PER_SIDE *
+            GRAPH98_G98_INTERLACE_PERIOD);
 
-    while (sweep_y <= GRAPH98_HEIGHT -
-                      GRAPH98_G98_INTERLACE_GROUP_LINES) {
-        uint16_t top_start;
-        uint16_t top_end;
-        uint16_t bottom_start;
-        uint16_t bottom_end;
+        graph98_out8(GRAPH98_PORT_ACCESS_PAGE, GRAPH98_PAGE_BACK);
+        graph98_read_interlace_stage_plane(
+            GRAPH98_VRAM_BLUE, top_y, bottom_y,
+            GRAPH98_G98_INTERLACE_PLANE_BYTES * 0u);
+        graph98_read_interlace_stage_plane(
+            GRAPH98_VRAM_RED, top_y, bottom_y,
+            GRAPH98_G98_INTERLACE_PLANE_BYTES * 1u);
+        graph98_read_interlace_stage_plane(
+            GRAPH98_VRAM_GREEN, top_y, bottom_y,
+            GRAPH98_G98_INTERLACE_PLANE_BYTES * 2u);
+        graph98_read_interlace_stage_plane(
+            GRAPH98_VRAM_INTENS, top_y, bottom_y,
+            GRAPH98_G98_INTERLACE_PLANE_BYTES * 3u);
 
-        top_end = (uint16_t)(sweep_y + GRAPH98_G98_INTERLACE_GROUP_LINES);
-        bottom_start = (uint16_t)(GRAPH98_HEIGHT - top_end);
-        if (sweep_y == 0) {
-            top_start = 0;
-            bottom_end = GRAPH98_HEIGHT;
-        } else {
-            top_start = (uint16_t)(top_end -
-                                   GRAPH98_G98_INTERLACE_SWEEP_LINES);
-            bottom_end = (uint16_t)(bottom_start +
-                                    GRAPH98_G98_INTERLACE_SWEEP_LINES);
-        }
-
-        for (plane_index = 0; plane_index < 4; ++plane_index) {
-            unsigned long plane_start;
-
-            plane_start = header_size +
-                          plane_size * (unsigned long)plane_index;
-
-            if (!graph98_copy_plane_interlace_range_from_file(
-                    fp,
-                    planes[plane_index],
-                    plane_start,
-                    top_start,
-                    top_end,
-                    0)) {
-                fclose(fp);
-                return 0;
-            }
-
-            if (!graph98_copy_plane_interlace_range_from_file(
-                    fp,
-                    planes[plane_index],
-                    plane_start,
-                    bottom_start,
-                    bottom_end,
-                    1)) {
-                fclose(fp);
-                return 0;
-            }
-        }
-
+        graph98_out8(GRAPH98_PORT_ACCESS_PAGE, GRAPH98_PAGE_FRONT);
         graph98_wait_vsync();
-        sweep_y = (uint16_t)(sweep_y +
-                             GRAPH98_G98_INTERLACE_SWEEP_LINES);
+
+        graph98_write_interlace_stage_plane(
+            GRAPH98_VRAM_BLUE, top_y, bottom_y,
+            GRAPH98_G98_INTERLACE_PLANE_BYTES * 0u);
+        graph98_write_interlace_stage_plane(
+            GRAPH98_VRAM_RED, top_y, bottom_y,
+            GRAPH98_G98_INTERLACE_PLANE_BYTES * 1u);
+        graph98_write_interlace_stage_plane(
+            GRAPH98_VRAM_GREEN, top_y, bottom_y,
+            GRAPH98_G98_INTERLACE_PLANE_BYTES * 2u);
+        graph98_write_interlace_stage_plane(
+            GRAPH98_VRAM_INTENS, top_y, bottom_y,
+            GRAPH98_G98_INTERLACE_PLANE_BYTES * 3u);
     }
 
-    fclose(fp);
-    return 1;
+    ok = 1;
+
+cleanup:
+    graph98_restore_default_pages();
+    return ok;
 }
 
 

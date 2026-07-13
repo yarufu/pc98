@@ -212,13 +212,13 @@ static void ui_draw_message_window(void)
 }
 
 static void __attribute__((noinline, optimize("Os")))
-ui_draw_background_effect(const char *bg_file, int interlace,
+ui_draw_background_effect(const char *bg_file, int use_interlace,
                           const char *failure_format)
 {
     int ok;
 
     if (bg_file != 0 && bg_file[0] != '\0') {
-        if (interlace) {
+        if (use_interlace) {
             ok = graph98_load_g98_interlace(bg_file);
         } else {
             ok = graph98_load_g98(bg_file);
@@ -748,6 +748,7 @@ static void app_cleanup(void)
         pmd_stop_music();
     }
 
+    graph98_restore_default_pages();
     graph98_clear(0);
     text98_clear_screen();
     debug_log("ADV98 END");

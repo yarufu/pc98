@@ -669,6 +669,9 @@ handle_display_command(const ScriptContext *ctx,
         } else if (strcmp(command->cmd, "#right") == 0) {
             render->right_interlace_pending = 0;
         }
+    } else if (strcmp(command->cmd, "#leftinterlace") == 0 ||
+               strcmp(command->cmd, "#rightinterlace") == 0) {
+        graph98_restore_default_pages();
     }
 
     process_command_line(ctx, line, state->bg_file,
@@ -702,12 +705,14 @@ draw_full_scene(const ScriptContext *ctx,
         ctx->draw_background(state->bg_file);
     }
     if (render->left_interlace_pending) {
-        ctx->draw_stand_interlace(state->left_sprite, STAND_LEFT_X, STAND_Y);
+        ctx->refresh_left_stand_only_interlace(
+            state->bg_file, state->left_sprite);
     } else {
         ctx->draw_stand(state->left_sprite, STAND_LEFT_X, STAND_Y);
     }
     if (render->right_interlace_pending) {
-        ctx->draw_stand_interlace(state->right_sprite, STAND_RIGHT_X, STAND_Y);
+        ctx->refresh_right_stand_only_interlace(
+            state->bg_file, state->right_sprite);
     } else {
         ctx->draw_stand(state->right_sprite, STAND_RIGHT_X, STAND_Y);
     }
@@ -748,27 +753,34 @@ redraw_scene_if_needed(const ScriptContext *ctx,
         strcmp(state->right_sprite, render->last_right_sprite) != 0 ||
         render->right_interlace_pending;
 
-    if (left_needs_redraw && !right_needs_redraw) {
-        if (render->left_interlace_pending) {
-            ctx->refresh_left_stand_only_interlace(state->bg_file,
-                                                   state->left_sprite);
-        } else {
-            ctx->refresh_left_stand_only(state->bg_file,
-                                         state->left_sprite);
-        }
-        strcpy(render->last_left_sprite, state->left_sprite);
-    } else if (!left_needs_redraw && right_needs_redraw) {
-        if (render->right_interlace_pending) {
-            ctx->refresh_right_stand_only_interlace(state->bg_file,
-                                                    state->right_sprite);
-        } else {
-            ctx->refresh_right_stand_only(state->bg_file,
-                                          state->right_sprite);
-        }
-        strcpy(render->last_right_sprite, state->right_sprite);
-    } else {
+    if (left_needs_redraw && right_needs_redraw &&
+        !render->left_interlace_pending &&
+        !render->right_interlace_pending) {
         /* The fallback redraw uses the normal background path. */
         draw_full_scene(ctx, render, 0);
+    } else {
+        /* Stand effect rectangles do not overlap, so run left then right. */
+        if (left_needs_redraw) {
+            if (render->left_interlace_pending) {
+                ctx->refresh_left_stand_only_interlace(
+                    state->bg_file, state->left_sprite);
+            } else {
+                ctx->refresh_left_stand_only(
+                    state->bg_file, state->left_sprite);
+            }
+            strcpy(render->last_left_sprite, state->left_sprite);
+        }
+
+        if (right_needs_redraw) {
+            if (render->right_interlace_pending) {
+                ctx->refresh_right_stand_only_interlace(
+                    state->bg_file, state->right_sprite);
+            } else {
+                ctx->refresh_right_stand_only(
+                    state->bg_file, state->right_sprite);
+            }
+            strcpy(render->last_right_sprite, state->right_sprite);
+        }
     }
 
     render->stand_dirty = 0;
@@ -798,7 +810,6 @@ enum GameResult run_script_sjis(const ScriptContext *ctx)
         ctx->request_script_resume == 0 ||
         ctx->system_action == 0 ||
         ctx->draw_background_interlace == 0 ||
-        ctx->draw_stand_interlace == 0 ||
         ctx->refresh_left_stand_only_interlace == 0 ||
         ctx->refresh_right_stand_only_interlace == 0) {
         return GAME_RESULT_EXIT_TO_DOS;

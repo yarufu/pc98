@@ -31,7 +31,6 @@ typedef struct {
     void (*draw_background)(const char *bg_file);
     void (*draw_background_interlace)(const char *bg_file);
     void (*draw_stand)(const char *sprite_file, int x, int y);
-    void (*draw_stand_interlace)(const char *sprite_file, int x, int y);
     void (*refresh_left_stand_only)(const char *bg_file,
                                     const char *sprite_file);
     void (*refresh_left_stand_only_interlace)(const char *bg_file,

@@ -86,7 +86,6 @@ static void ui_draw_message_window(void);
 static void ui_set_message_box(int x0, int y0, int x1, int y1);
 static int ui_get_message_line_chars(void);
 static void ui_draw_stand(const char *sprite_file, int x, int y);
-static void ui_draw_stand_interlace(const char *sprite_file, int x, int y);
 static int ui_draw_message_page_jis(const uint16_t *name, int name_len,
                                     const uint16_t *jis_codes, int count,
                                     int start_index);
@@ -274,12 +273,13 @@ static void ui_refresh_left_stand_only(const char *bg_file,
 static void ui_refresh_left_stand_only_interlace(const char *bg_file,
                                                  const char *sprite_file)
 {
-    ui_restore_stand_background_rect(STAND_LEFT_X,
-                                     STAND_Y,
-                                     STAND_LEFT_X + STAND_W - 1,
-                                     STAND_Y + STAND_H - 1,
-                                     bg_file);
-    ui_draw_stand_interlace(sprite_file, STAND_LEFT_X, STAND_Y);
+    if (!graph98_draw_stand_file_trans_interlace(
+            bg_file, sprite_file, STAND_LEFT_X, STAND_Y, 0)) {
+        debug_log("left stand interlace failed: bg=%s sprite=%s",
+                  bg_file != 0 ? bg_file : "(null)",
+                  sprite_file != 0 && sprite_file[0] != '\0' ?
+                      sprite_file : "none");
+    }
 }
 
 static void ui_refresh_right_stand_only(const char *bg_file,
@@ -296,12 +296,13 @@ static void ui_refresh_right_stand_only(const char *bg_file,
 static void ui_refresh_right_stand_only_interlace(const char *bg_file,
                                                   const char *sprite_file)
 {
-    ui_restore_stand_background_rect(STAND_RIGHT_X,
-                                     STAND_Y,
-                                     STAND_RIGHT_X + STAND_W - 1,
-                                     STAND_Y + STAND_H - 1,
-                                     bg_file);
-    ui_draw_stand_interlace(sprite_file, STAND_RIGHT_X, STAND_Y);
+    if (!graph98_draw_stand_file_trans_interlace(
+            bg_file, sprite_file, STAND_RIGHT_X, STAND_Y, 0)) {
+        debug_log("right stand interlace failed: bg=%s sprite=%s",
+                  bg_file != 0 ? bg_file : "(null)",
+                  sprite_file != 0 && sprite_file[0] != '\0' ?
+                      sprite_file : "none");
+    }
 }
 
 static void ui_draw_stand(const char *sprite_file, int x, int y)
@@ -313,19 +314,6 @@ static void ui_draw_stand(const char *sprite_file, int x, int y)
     if (!graph98_draw_sprite_file_trans(sprite_file, x, y, 0)) {
         debug_log("sprite load failed: %s", sprite_file);
 
-        graph98_boxfill(x + 20, y + 20, x + 180, y + 80, 4);
-        graph98_draw_string(x + 30, y + 45, "SPRITE LOAD NG", 15);
-    }
-}
-
-static void ui_draw_stand_interlace(const char *sprite_file, int x, int y)
-{
-    if (sprite_file == 0 || sprite_file[0] == '\0') {
-        return;
-    }
-
-    if (!graph98_draw_sprite_file_trans_interlace(sprite_file, x, y, 0)) {
-        debug_log("sprite interlace load failed: %s", sprite_file);
         graph98_boxfill(x + 20, y + 20, x + 180, y + 80, 4);
         graph98_draw_string(x + 30, y + 45, "SPRITE LOAD NG", 15);
     }
@@ -880,7 +868,6 @@ int main(void)
         script_context.draw_background = ui_draw_background;
         script_context.draw_background_interlace = ui_draw_background_interlace;
         script_context.draw_stand = ui_draw_stand;
-        script_context.draw_stand_interlace = ui_draw_stand_interlace;
         script_context.refresh_left_stand_only = ui_refresh_left_stand_only;
         script_context.refresh_left_stand_only_interlace =
             ui_refresh_left_stand_only_interlace;

@@ -1,0 +1,109 @@
+; Experimental stand interlace page test.
+; Copy this file to script.txt for a test run.
+; Required files: class.g98, C01_N.SPR
+
+#pal adv.pal
+#bg class.g98
+
+; Page display immediately after #bg and before the first message.
+; This also tests consecutive left and right page commands.
+#leftinterlacepage C01_N.SPR
+#rightinterlacepage C01_N.SPR
+[PAGE TEST]
+BG THEN LEFT AND RIGHT PAGE SHOW
+
+; Consecutive left and right page removal.
+#leftinterlacepage none
+#rightinterlacepage none
+[PAGE TEST]
+LEFT AND RIGHT PAGE NONE
+
+; 1. Show left stand with the page method.
+#leftinterlacepage C01_N.SPR
+[PAGE TEST]
+1 LEFT PAGE SHOW
+
+; 2. Remove left stand with the page method.
+#leftinterlacepage none
+[PAGE TEST]
+2 LEFT PAGE NONE
+
+; 3. Show left stand again.
+#leftinterlacepage C01_N.SPR
+[PAGE TEST]
+3 LEFT PAGE SHOW AGAIN
+
+; 4. Show right stand with the page method.
+#rightinterlacepage C01_N.SPR
+[PAGE TEST]
+4 RIGHT PAGE SHOW
+
+; 5. Remove right stand with the page method.
+#rightinterlacepage none
+[PAGE TEST]
+5 RIGHT PAGE NONE
+
+; 6. Show both, then remove only the left stand.
+#rightinterlacepage C01_N.SPR
+[PAGE TEST]
+6 BOTH STANDS
+#leftinterlacepage none
+[PAGE TEST]
+6 RIGHT MUST REMAIN
+
+; 7. Show the same stand repeatedly.
+#leftinterlacepage C01_N.SPR
+[PAGE TEST]
+7 SAME STAND FIRST
+#leftinterlacepage C01_N.SPR
+[PAGE TEST]
+7 SAME STAND SECOND
+
+; 8. Repeat page show and page none.
+#leftinterlacepage none
+[PAGE TEST]
+8 LOOP NONE 1
+#leftinterlacepage C01_N.SPR
+[PAGE TEST]
+8 LOOP SHOW 1
+#leftinterlacepage none
+[PAGE TEST]
+8 LOOP NONE 2
+#leftinterlacepage C01_N.SPR
+[PAGE TEST]
+8 LOOP SHOW 2
+
+; 9. Switch between normal commands and the page method.
+#left none
+#right C01_N.SPR
+[PAGE TEST]
+9 NORMAL RIGHT
+#rightinterlacepage none
+[PAGE TEST]
+9 PAGE RIGHT NONE
+#left C01_N.SPR
+[PAGE TEST]
+9 NORMAL LEFT
+#leftinterlacepage none
+[PAGE TEST]
+9 PAGE LEFT NONE
+
+; 10. Compare with the existing official interlace commands.
+#leftinterlace C01_N.SPR
+[PAGE TEST]
+10 OLD LEFT INTERLACE
+#left none
+[PAGE TEST]
+10 OLD LEFT CLEAR
+#rightinterlace C01_N.SPR
+[PAGE TEST]
+10 OLD RIGHT INTERLACE
+#right none
+[PAGE TEST]
+10 OLD RIGHT CLEAR
+#leftinterlacepage C01_N.SPR
+[PAGE TEST]
+10 PAGE LEFT INTERLACE
+#leftinterlacepage none
+[PAGE TEST]
+TEST COMPLETE

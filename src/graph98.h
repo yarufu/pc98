@@ -25,8 +25,9 @@ int graph98_load_g98_interlace(const char *path);
 void graph98_restore_default_pages(void);
 int graph98_draw_sprite_file_trans(const char *path, int x, int y,
                                    unsigned char transparent_color);
-int graph98_draw_sprite_file_trans_interlace(const char *path, int x, int y,
-                                             unsigned char transparent_color);
+int graph98_draw_stand_file_trans_interlace(
+    const char *background_path, const char *sprite_path,
+    int x, int y, unsigned char transparent_color);
 void graph98_draw_digit(int x, int y, int digit, unsigned char color);
 void graph98_draw_number(int x, int y, int value, unsigned char color);
 void graph98_draw_char(int x, int y, char ch, unsigned char color);

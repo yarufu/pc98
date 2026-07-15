@@ -21,9 +21,8 @@
 #define STAND_LEFT_X   64
 #define STAND_RIGHT_X  320
 #define STAND_Y        9
-
-#define STAND_W        256
-#define STAND_H        290
+#define STAND_RIGHT_EDGE 575
+#define STAND_BOTTOM_Y   298
 
 #define MAX_CHOICE_ITEMS 6
 #define MAX_CHOICE_CHARS 64
@@ -96,13 +95,11 @@ static void ui_draw_current_stands(const char *left_sprite,
 static void reset_choice_lines(void);
 static void store_choice_line(int index, const char *line) __attribute__((noinline));
 static void trim_leading_spaces(char *str);
-static void ui_restore_stand_background_rect(int x0, int y0, int x1, int y1, const char *bg_file);
-static void ui_refresh_left_stand_only(const char *bg_file,
-                                       const char *sprite_file);
+static void ui_refresh_stand_only(const char *bg_file,
+                                  const char *sprite_file,
+                                  int x);
 static void ui_refresh_left_stand_only_interlace(const char *bg_file,
                                                  const char *sprite_file);
-static void ui_refresh_right_stand_only(const char *bg_file,
-                                        const char *sprite_file);
 static void ui_refresh_right_stand_only_interlace(const char *bg_file,
                                                   const char *sprite_file);
 
@@ -244,30 +241,18 @@ static void ui_draw_background_interlace(const char *bg_file)
     ui_draw_background_effect(bg_file, 1, "bg interlace load failed: %s");
 }
 
-static void ui_restore_stand_background_rect(int x0, int y0, int x1, int y1, const char *bg_file)
+static void ui_refresh_stand_only(const char *bg_file,
+                                  const char *sprite_file,
+                                  int x)
 {
-    if (bg_file != 0 && bg_file[0] != '\0') {
-        if (graph98_load_g98_rect(bg_file, x0, y0, x1, y1)) {
-            return;
-        }
+    if (!graph98_draw_stand_file_trans_vram(
+            bg_file, sprite_file, x, STAND_Y, 0)) {
+        debug_log("stand vram refresh failed: bg=%s sprite=%s x=%d",
+                  bg_file != 0 ? bg_file : "(null)",
+                  sprite_file != 0 && sprite_file[0] != '\0' ?
+                      sprite_file : "none",
+                  x);
     }
-
-    /*
-     * 背景ファイル復元に失敗した場合の保険。
-     * ここでは全背景再描画に戻します。
-     */
-    ui_draw_background(bg_file);
-}
-
-static void ui_refresh_left_stand_only(const char *bg_file,
-                                       const char *sprite_file)
-{
-    ui_restore_stand_background_rect(STAND_LEFT_X,
-                                     STAND_Y,
-                                     STAND_LEFT_X + STAND_W - 1,
-                                     STAND_Y + STAND_H - 1,
-                                     bg_file);
-    ui_draw_stand(sprite_file, STAND_LEFT_X, STAND_Y);
 }
 
 static void ui_refresh_left_stand_only_interlace(const char *bg_file,
@@ -280,17 +265,6 @@ static void ui_refresh_left_stand_only_interlace(const char *bg_file,
                   sprite_file != 0 && sprite_file[0] != '\0' ?
                       sprite_file : "none");
     }
-}
-
-static void ui_refresh_right_stand_only(const char *bg_file,
-                                        const char *sprite_file)
-{
-    ui_restore_stand_background_rect(STAND_RIGHT_X,
-                                     STAND_Y,
-                                     STAND_RIGHT_X + STAND_W - 1,
-                                     STAND_Y + STAND_H - 1,
-                                     bg_file);
-    ui_draw_stand(sprite_file, STAND_RIGHT_X, STAND_Y);
 }
 
 static void ui_refresh_right_stand_only_interlace(const char *bg_file,
@@ -546,7 +520,20 @@ static void ui_hide_message_window_until_resume(void)
 {
     uint8_t ch;
 
-    ui_redraw_current_scene_from_state();
+    graph98_restore_default_pages();
+
+    if (g_msgbox_x0 <= STAND_RIGHT_EDGE &&
+        g_msgbox_x1 >= STAND_LEFT_X &&
+        g_msgbox_y0 <= STAND_BOTTOM_Y &&
+        g_msgbox_y1 >= STAND_Y) {
+        ui_redraw_current_scene_from_state();
+    } else if (g_state.bg_file[0] == '\0' ||
+               !graph98_load_g98_rect(g_state.bg_file,
+                                      g_msgbox_x0, g_msgbox_y0,
+                                      g_msgbox_x1, g_msgbox_y1)) {
+        debug_log("H hide rect restore failed: %s", g_state.bg_file);
+        ui_redraw_current_scene_from_state();
+    }
 
     for (;;) {
         if (g_mouse_available && mouse98_left_pressed()) {
@@ -711,6 +698,7 @@ static void resume_bgm_after_load(void)
 
 static void restore_scene_after_load(void)
 {
+    graph98_restore_default_pages();
     restore_palette_after_load();
     ui_redraw_current_scene_from_state();
     resume_bgm_after_load();
@@ -868,12 +856,11 @@ int main(void)
         script_context.draw_background = ui_draw_background;
         script_context.draw_background_interlace = ui_draw_background_interlace;
         script_context.draw_stand = ui_draw_stand;
-        script_context.refresh_left_stand_only = ui_refresh_left_stand_only;
         script_context.refresh_left_stand_only_interlace =
             ui_refresh_left_stand_only_interlace;
-        script_context.refresh_right_stand_only = ui_refresh_right_stand_only;
         script_context.refresh_right_stand_only_interlace =
             ui_refresh_right_stand_only_interlace;
+        script_context.refresh_stand_only = ui_refresh_stand_only;
         script_context.draw_message_jis = ui_draw_message_jis;
         script_context.reset_choice_lines = reset_choice_lines;
         script_context.store_choice_line = store_choice_line;

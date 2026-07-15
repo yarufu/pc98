@@ -63,11 +63,17 @@
             GRAPH98_STAND_INTERLACE_SWEEP_LINES - 1u) / \
            GRAPH98_STAND_INTERLACE_SWEEP_LINES))
 
+#define GRAPH98_STAND_TRANSFER_LINES 8u
+#define GRAPH98_STAND_TRANSFER_PLANES 4u
+
 #define GRAPH98_IMAGE_WORK_SIZE 8192u
 #define GRAPH98_G98_CHUNK_LINES \
     (GRAPH98_IMAGE_WORK_SIZE / GRAPH98_BYTES_PER_LINE)
 #define GRAPH98_G98_RECT_CHUNK_LINES \
     (GRAPH98_IMAGE_WORK_SIZE / GRAPH98_BYTES_PER_LINE)
+#define GRAPH98_STAND_TRANSFER_CHUNK_LINES \
+    (GRAPH98_IMAGE_WORK_SIZE / \
+     (GRAPH98_STAND_BYTES_PER_LINE * GRAPH98_STAND_TRANSFER_PLANES))
 
 /* Image loaders are non-reentrant and share this buffer sequentially. */
 static uint8_t graph98_image_work[GRAPH98_IMAGE_WORK_SIZE];
@@ -117,6 +123,18 @@ _Static_assert(GRAPH98_STAND_INTERLACE_GROUP_LINES == 32u,
                "stand first stage must contain 32 lines");
 _Static_assert(GRAPH98_STAND_INTERLACE_SWEEP_LINES == 8u,
                "stand normal stage must contain eight lines");
+_Static_assert(GRAPH98_STAND_TRANSFER_LINES == 8u,
+               "stand transfer unit must contain eight lines");
+_Static_assert(GRAPH98_STAND_TRANSFER_CHUNK_LINES == 64u,
+               "stand transfer chunk must contain 64 lines");
+_Static_assert(GRAPH98_STAND_TRANSFER_CHUNK_LINES *
+                   GRAPH98_STAND_BYTES_PER_LINE *
+                   GRAPH98_STAND_TRANSFER_PLANES <= GRAPH98_IMAGE_WORK_SIZE,
+               "stand transfer chunk exceeds image work buffer");
+_Static_assert(GRAPH98_STAND_TRANSFER_CHUNK_LINES *
+                   GRAPH98_STAND_BYTES_PER_LINE *
+                   GRAPH98_STAND_TRANSFER_PLANES - 1u == 8191u,
+               "stand transfer maximum work index must be 8,191");
 
 #define GRAPH98_SPRITE_MAGIC_0 'S'
 #define GRAPH98_SPRITE_MAGIC_1 'P'
@@ -1358,6 +1376,167 @@ graph98_draw_stand_file_trans_interlace(
             GRAPH98_VRAM_INTENS, byte_x, (uint16_t)y,
             top_start, top_end, bottom_start, bottom_end,
             GRAPH98_STAND_INTERLACE_PLANE_BYTES * 3u, 1);
+    }
+
+    ok = 1;
+
+cleanup:
+    graph98_restore_default_pages();
+    return ok;
+}
+
+static void __attribute__((noinline, optimize("Os")))
+graph98_transfer_stand_vram_planes(
+    uint16_t byte_x,
+    uint16_t base_y,
+    uint16_t chunk_y,
+    uint16_t first_line,
+    uint16_t line_count,
+    uint16_t plane_bytes,
+    int write_to_vram)
+{
+    uint16_t plane_number;
+
+    for (plane_number = 0;
+         plane_number < GRAPH98_STAND_TRANSFER_PLANES;
+         ++plane_number) {
+        volatile uint8_t __far *plane;
+        uint16_t line;
+        uint16_t work_start;
+
+        if (plane_number == 0u) {
+            plane = GRAPH98_VRAM_BLUE;
+        } else if (plane_number == 1u) {
+            plane = GRAPH98_VRAM_RED;
+        } else if (plane_number == 2u) {
+            plane = GRAPH98_VRAM_GREEN;
+        } else {
+            plane = GRAPH98_VRAM_INTENS;
+        }
+        work_start = (uint16_t)(plane_bytes * plane_number);
+
+        for (line = first_line;
+             line < (uint16_t)(first_line + line_count);
+             ++line) {
+            uint16_t vram_offset;
+            uint16_t work_offset;
+            uint16_t i;
+
+            vram_offset = (uint16_t)(
+                (base_y + chunk_y + line) * GRAPH98_BYTES_PER_LINE + byte_x);
+            work_offset = (uint16_t)(
+                work_start + line * GRAPH98_STAND_BYTES_PER_LINE);
+
+            if (write_to_vram) {
+                for (i = 0; i < GRAPH98_STAND_BYTES_PER_LINE; ++i) {
+                    plane[(uint16_t)(vram_offset + i)] =
+                        graph98_image_work[(uint16_t)(work_offset + i)];
+                }
+            } else {
+                for (i = 0; i < GRAPH98_STAND_BYTES_PER_LINE; ++i) {
+                    graph98_image_work[(uint16_t)(work_offset + i)] =
+                        plane[(uint16_t)(vram_offset + i)];
+                }
+            }
+        }
+    }
+}
+
+int __attribute__((optimize("Os")))
+graph98_draw_stand_file_trans_vram(
+    const char *background_path, const char *sprite_path,
+    int x, int y, unsigned char transparent_color)
+{
+    uint16_t byte_x;
+    uint16_t chunk_y;
+    int first_write;
+    int ok;
+
+    ok = 0;
+
+    /* The displayed page remains page 0, including during preparation. */
+    graph98_out8(GRAPH98_PORT_DISPLAY_PAGE, GRAPH98_PAGE_FRONT);
+
+    if (background_path == 0 || background_path[0] == '\0') {
+        debug_log("stand vram background missing: x=%d", x);
+        goto cleanup;
+    }
+
+    if (x < 0 || y < 0 ||
+        x + (int)GRAPH98_STAND_WIDTH > GRAPH98_WIDTH ||
+        y + (int)GRAPH98_STAND_HEIGHT > GRAPH98_HEIGHT ||
+        (x & 7) != 0) {
+        debug_log("stand vram rect invalid: x=%d y=%d", x, y);
+        goto cleanup;
+    }
+
+    byte_x = (uint16_t)(x >> 3);
+    graph98_out8(GRAPH98_PORT_ACCESS_PAGE, GRAPH98_PAGE_BACK);
+
+    /* All G98 and SPR file I/O, and all transparency work, ends here. */
+    if (!graph98_load_g98_rect(
+            background_path,
+            x, y,
+            x + (int)GRAPH98_STAND_WIDTH - 1,
+            y + (int)GRAPH98_STAND_HEIGHT - 1)) {
+        debug_log("stand vram background load failed: %s x=%d",
+                  background_path, x);
+        goto cleanup;
+    }
+
+    if (sprite_path != 0 && sprite_path[0] != '\0' &&
+        !graph98_draw_sprite_file_trans(
+            sprite_path, x, y, transparent_color)) {
+        debug_log("stand vram sprite load failed: %s x=%d",
+                  sprite_path, x);
+        goto cleanup;
+    }
+
+    first_write = 1;
+    chunk_y = 0;
+    while (chunk_y < GRAPH98_STAND_HEIGHT) {
+        uint16_t chunk_lines;
+        uint16_t plane_bytes;
+        uint16_t unit_start;
+
+        chunk_lines = (uint16_t)(GRAPH98_STAND_HEIGHT - chunk_y);
+        if (chunk_lines > GRAPH98_STAND_TRANSFER_CHUNK_LINES) {
+            chunk_lines = GRAPH98_STAND_TRANSFER_CHUNK_LINES;
+        }
+        plane_bytes = (uint16_t)(
+            chunk_lines * GRAPH98_STAND_BYTES_PER_LINE);
+
+        if (chunk_y != 0u) {
+            graph98_out8(GRAPH98_PORT_ACCESS_PAGE, GRAPH98_PAGE_BACK);
+        }
+
+        graph98_transfer_stand_vram_planes(
+            byte_x, (uint16_t)y, chunk_y,
+            0, chunk_lines, plane_bytes, 0);
+
+        graph98_out8(GRAPH98_PORT_ACCESS_PAGE, GRAPH98_PAGE_FRONT);
+        if (first_write) {
+            graph98_wait_vsync();
+            first_write = 0;
+        }
+
+        for (unit_start = 0; unit_start < chunk_lines;
+             unit_start = (uint16_t)(
+                 unit_start + GRAPH98_STAND_TRANSFER_LINES)) {
+            uint16_t unit_lines;
+
+            unit_lines = (uint16_t)(chunk_lines - unit_start);
+            if (unit_lines > GRAPH98_STAND_TRANSFER_LINES) {
+                unit_lines = GRAPH98_STAND_TRANSFER_LINES;
+            }
+
+            /* Complete B/R/G/I for each fixed eight-line unit. */
+            graph98_transfer_stand_vram_planes(
+                byte_x, (uint16_t)y, chunk_y,
+                unit_start, unit_lines, plane_bytes, 1);
+        }
+
+        chunk_y = (uint16_t)(chunk_y + chunk_lines);
     }
 
     ok = 1;

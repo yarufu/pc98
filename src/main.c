@@ -76,6 +76,7 @@ static int g_choice_saved_lens[MAX_CHOICE_ITEMS];
 
 /* 関数宣言部 */
 static void ui_redraw_current_scene_from_state(void);
+static void ui_redraw_current_scene_vram_from_state(void);
 static void ui_hide_message_window_until_resume(void);
 static void text98_hide_cursor(void);
 static void text98_clear_screen(void);
@@ -339,10 +340,8 @@ static int ui_draw_message_page_jis(const uint16_t *name, int name_len,
     int message_line3_y;
     int text_x;
     int message_line_chars;
+    int back_ready;
 
-
-
-    ui_draw_message_window();
     message_line_chars = ui_get_message_line_chars();
 
     name_draw_count = name_len;
@@ -409,9 +408,6 @@ static int ui_draw_message_page_jis(const uint16_t *name, int name_len,
 
         get_kanji_font(jis_right_bracket, bracket_font1);
         name_text[name_draw_count + 1] = bracket_font1;
-
-        draw_jis_string(g_msg_text_x, message_line1_y, name_text, name_draw_count + 2);
-
         text_x = g_msg_text_x + (name_draw_count + 2) * 16 + 8;
     }
 
@@ -425,6 +421,19 @@ static int ui_draw_message_page_jis(const uint16_t *name, int name_len,
         line3[i] = font[line1_count + line2_count + i];
     }
 
+    back_ready = graph98_prepare_rect_back_vram(
+        g_msgbox_x0, g_msgbox_y0, g_msgbox_x1, g_msgbox_y1);
+    if (!back_ready) {
+        graph98_restore_default_pages();
+    }
+
+    ui_draw_message_window();
+
+    if (name != 0 && name_draw_count > 0) {
+        draw_jis_string(g_msg_text_x, message_line1_y,
+                        name_text, name_draw_count + 2);
+    }
+
     if (line1_count > 0) {
         draw_jis_string(text_x, message_line1_y, line1, line1_count);
     }
@@ -433,6 +442,13 @@ static int ui_draw_message_page_jis(const uint16_t *name, int name_len,
     }
     if (line3_count > 0) {
         draw_jis_string(g_msg_text_x, message_line3_y, line3, line3_count);
+    }
+
+    if (back_ready &&
+        !graph98_present_rect_back_vram(
+            g_msgbox_x0, g_msgbox_y0, g_msgbox_x1, g_msgbox_y1)) {
+        debug_log("message rect present failed");
+        graph98_restore_default_pages();
     }
 
     return line1_count + line2_count + line3_count;
@@ -530,6 +546,16 @@ static void ui_redraw_current_scene_from_state(void)
     ui_draw_background(g_state.bg_file);
 
     ui_draw_current_stands(g_state.left_sprite, g_state.right_sprite);
+}
+
+static void ui_redraw_current_scene_vram_from_state(void)
+{
+    graph98_restore_default_pages();
+    if (!ui_draw_current_scene_vram(
+            g_state.bg_file, g_state.left_sprite, g_state.right_sprite)) {
+        graph98_restore_default_pages();
+        ui_redraw_current_scene_from_state();
+    }
 }
 
 /* メッセージ非表示中の待機関数 */
@@ -839,7 +865,7 @@ int main(void)
     menu_context.wait_choice = input_wait_choice_jis;
     menu_context.draw_choice_jis = ui_draw_choice_jis;
     menu_context.redraw_current_scene_from_state =
-        ui_redraw_current_scene_from_state;
+        ui_redraw_current_scene_vram_from_state;
     menu_context.restore_scene_after_load = restore_scene_after_load;
     menu_context.request_loaded_game_resume = request_loaded_game_resume;
     menu_init(&menu_context);

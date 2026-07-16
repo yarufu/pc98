@@ -65,6 +65,11 @@
 
 #define GRAPH98_STAND_TRANSFER_LINES 8u
 #define GRAPH98_STAND_TRANSFER_PLANES 4u
+#define GRAPH98_RECT_TRANSFER_LINES 8u
+#define GRAPH98_RECT_TRANSFER_PLANES 4u
+#define GRAPH98_RECT_TRANSFER_MAX_BYTES \
+    (GRAPH98_BYTES_PER_LINE * GRAPH98_RECT_TRANSFER_LINES * \
+     GRAPH98_RECT_TRANSFER_PLANES)
 
 #define GRAPH98_IMAGE_WORK_SIZE 8192u
 #define GRAPH98_G98_CHUNK_LINES \
@@ -144,6 +149,10 @@ _Static_assert(GRAPH98_STAND_TRANSFER_CHUNK_LINES *
                    GRAPH98_STAND_BYTES_PER_LINE *
                    GRAPH98_STAND_TRANSFER_PLANES - 1u == 8191u,
                "stand transfer maximum work index must be 8,191");
+_Static_assert(GRAPH98_RECT_TRANSFER_MAX_BYTES == 2560u,
+               "full-width rect transfer unit must contain 2,560 bytes");
+_Static_assert(GRAPH98_RECT_TRANSFER_MAX_BYTES <= GRAPH98_IMAGE_WORK_SIZE,
+               "rect transfer unit exceeds image work buffer");
 
 #define GRAPH98_SPRITE_MAGIC_0 'S'
 #define GRAPH98_SPRITE_MAGIC_1 'P'
@@ -984,6 +993,150 @@ graph98_draw_scene_file_trans_vram(
 cleanup:
     graph98_restore_default_pages();
     return ok;
+}
+
+static void __attribute__((noinline, optimize("Os")))
+graph98_transfer_rect_unit(
+    uint16_t byte_x,
+    uint16_t y,
+    uint16_t bytes_per_row,
+    uint16_t line_count,
+    int write_to_vram)
+{
+    uint16_t plane_bytes;
+    uint16_t plane_number;
+
+    plane_bytes = (uint16_t)(bytes_per_row * line_count);
+
+    for (plane_number = 0;
+         plane_number < GRAPH98_RECT_TRANSFER_PLANES;
+         ++plane_number) {
+        volatile uint8_t __far *plane;
+        uint16_t line;
+        uint16_t work_start;
+
+        if (plane_number == 0u) {
+            plane = GRAPH98_VRAM_BLUE;
+        } else if (plane_number == 1u) {
+            plane = GRAPH98_VRAM_RED;
+        } else if (plane_number == 2u) {
+            plane = GRAPH98_VRAM_GREEN;
+        } else {
+            plane = GRAPH98_VRAM_INTENS;
+        }
+        work_start = (uint16_t)(plane_bytes * plane_number);
+
+        for (line = 0; line < line_count; ++line) {
+            uint16_t vram_offset;
+            uint16_t work_offset;
+            uint16_t i;
+
+            vram_offset = (uint16_t)(
+                (y + line) * GRAPH98_BYTES_PER_LINE + byte_x);
+            work_offset = (uint16_t)(
+                work_start + line * bytes_per_row);
+
+            if (write_to_vram) {
+                for (i = 0; i < bytes_per_row; ++i) {
+                    plane[(uint16_t)(vram_offset + i)] =
+                        graph98_image_work[(uint16_t)(work_offset + i)];
+                }
+            } else {
+                for (i = 0; i < bytes_per_row; ++i) {
+                    graph98_image_work[(uint16_t)(work_offset + i)] =
+                        plane[(uint16_t)(vram_offset + i)];
+                }
+            }
+        }
+    }
+}
+
+int __attribute__((optimize("Os")))
+graph98_prepare_rect_back_vram(int x0, int y0, int x1, int y1)
+{
+    uint16_t byte_x;
+    uint16_t bytes_per_row;
+    uint16_t y;
+
+    graph98_out8(GRAPH98_PORT_DISPLAY_PAGE, GRAPH98_PAGE_FRONT);
+
+    if (x0 < 0 || y0 < 0 || x0 > x1 || y0 > y1 ||
+        x1 >= GRAPH98_WIDTH || y1 >= GRAPH98_HEIGHT) {
+        graph98_restore_default_pages();
+        return 0;
+    }
+
+    byte_x = (uint16_t)(x0 >> 3);
+    bytes_per_row = (uint16_t)((x1 >> 3) - (x0 >> 3) + 1);
+    y = (uint16_t)y0;
+
+    while (y <= (uint16_t)y1) {
+        uint16_t line_count;
+
+        line_count = (uint16_t)((uint16_t)y1 - y + 1u);
+        if (line_count > GRAPH98_RECT_TRANSFER_LINES) {
+            line_count = GRAPH98_RECT_TRANSFER_LINES;
+        }
+
+        graph98_out8(GRAPH98_PORT_ACCESS_PAGE, GRAPH98_PAGE_FRONT);
+        graph98_transfer_rect_unit(
+            byte_x, y, bytes_per_row, line_count, 0);
+        graph98_out8(GRAPH98_PORT_ACCESS_PAGE, GRAPH98_PAGE_BACK);
+        graph98_transfer_rect_unit(
+            byte_x, y, bytes_per_row, line_count, 1);
+
+        y = (uint16_t)(y + line_count);
+    }
+
+    /* The caller now draws the completed message into page 1. */
+    return 1;
+}
+
+int __attribute__((optimize("Os")))
+graph98_present_rect_back_vram(int x0, int y0, int x1, int y1)
+{
+    uint16_t byte_x;
+    uint16_t bytes_per_row;
+    uint16_t y;
+    int first_write;
+
+    if (x0 < 0 || y0 < 0 || x0 > x1 || y0 > y1 ||
+        x1 >= GRAPH98_WIDTH || y1 >= GRAPH98_HEIGHT) {
+        graph98_restore_default_pages();
+        return 0;
+    }
+
+    byte_x = (uint16_t)(x0 >> 3);
+    bytes_per_row = (uint16_t)((x1 >> 3) - (x0 >> 3) + 1);
+    y = (uint16_t)y0;
+    first_write = 1;
+
+    while (y <= (uint16_t)y1) {
+        uint16_t line_count;
+
+        line_count = (uint16_t)((uint16_t)y1 - y + 1u);
+        if (line_count > GRAPH98_RECT_TRANSFER_LINES) {
+            line_count = GRAPH98_RECT_TRANSFER_LINES;
+        }
+
+        graph98_out8(GRAPH98_PORT_ACCESS_PAGE, GRAPH98_PAGE_BACK);
+        graph98_transfer_rect_unit(
+            byte_x, y, bytes_per_row, line_count, 0);
+        graph98_out8(GRAPH98_PORT_ACCESS_PAGE, GRAPH98_PAGE_FRONT);
+        if (first_write) {
+            graph98_wait_vsync();
+            first_write = 0;
+        }
+
+        /* Complete B/R/G/I for each fixed eight-line unit. */
+        graph98_transfer_rect_unit(
+            byte_x, y, bytes_per_row, line_count, 1);
+
+        y = (uint16_t)(y + line_count);
+    }
+
+    graph98_restore_default_pages();
+    return 1;
 }
 
 static int graph98_copy_plane_rect_from_file(FILE *fp,

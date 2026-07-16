@@ -30,6 +30,8 @@ int graph98_draw_scene_file_trans_vram(
     int right_x,
     int stand_y,
     unsigned char transparent_color);
+int graph98_prepare_rect_back_vram(int x0, int y0, int x1, int y1);
+int graph98_present_rect_back_vram(int x0, int y0, int x1, int y1);
 void graph98_restore_default_pages(void);
 int graph98_draw_sprite_file_trans(const char *path, int x, int y,
                                    unsigned char transparent_color);

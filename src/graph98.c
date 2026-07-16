@@ -80,6 +80,8 @@ static uint8_t graph98_image_work[GRAPH98_IMAGE_WORK_SIZE];
 
 _Static_assert(GRAPH98_IMAGE_WORK_SIZE == 8192u,
                "image work buffer must be 8 KB");
+_Static_assert(GRAPH98_VRAM_PLANE_SIZE == 32000u,
+               "full-screen VRAM plane must contain 32,000 bytes");
 _Static_assert(GRAPH98_IMAGE_WORK_SIZE >= GRAPH98_SPRITE_MAX_WIDTH,
                "sprite chunk must contain at least one line");
 _Static_assert(GRAPH98_G98_CHUNK_LINES >= 1u,
@@ -92,6 +94,13 @@ _Static_assert(GRAPH98_BYTES_PER_LINE * GRAPH98_G98_RECT_CHUNK_LINES <=
 _Static_assert(GRAPH98_BYTES_PER_LINE * GRAPH98_G98_CHUNK_LINES <=
                    GRAPH98_IMAGE_WORK_SIZE,
                "G98 chunk exceeds image work buffer");
+_Static_assert(GRAPH98_G98_CHUNK_LINES == 102u,
+               "full-screen VRAM chunk must contain 102 lines");
+_Static_assert(GRAPH98_BYTES_PER_LINE * GRAPH98_G98_CHUNK_LINES == 8160u,
+               "full-screen VRAM chunk must contain 8,160 bytes");
+_Static_assert(GRAPH98_BYTES_PER_LINE * GRAPH98_G98_CHUNK_LINES - 1u ==
+                   8159u,
+               "full-screen VRAM chunk maximum work index must be 8,159");
 _Static_assert(GRAPH98_G98_INTERLACE_STAGE_LINES == 8u,
                "G98 interlace stage must contain eight lines");
 _Static_assert(GRAPH98_G98_INTERLACE_STAGE_BYTES == 2560u,
@@ -888,6 +897,92 @@ int graph98_load_g98(const char *path)
 
     ok = 1;
     fclose(fp);
+    return ok;
+}
+
+static void __attribute__((noinline, optimize("Os")))
+graph98_copy_vram_plane_to_front(volatile uint8_t __far *plane)
+{
+    uint16_t chunk_y;
+
+    chunk_y = 0;
+    while (chunk_y < GRAPH98_HEIGHT) {
+        uint16_t chunk_lines;
+        uint16_t byte_count;
+        uint16_t vram_offset;
+        uint16_t i;
+
+        chunk_lines = (uint16_t)(GRAPH98_HEIGHT - chunk_y);
+        if (chunk_lines > GRAPH98_G98_CHUNK_LINES) {
+            chunk_lines = GRAPH98_G98_CHUNK_LINES;
+        }
+        byte_count = (uint16_t)(chunk_lines * GRAPH98_BYTES_PER_LINE);
+        vram_offset = (uint16_t)(chunk_y * GRAPH98_BYTES_PER_LINE);
+
+        graph98_out8(GRAPH98_PORT_ACCESS_PAGE, GRAPH98_PAGE_BACK);
+        for (i = 0; i < byte_count; ++i) {
+            graph98_image_work[i] = plane[(uint16_t)(vram_offset + i)];
+        }
+
+        graph98_out8(GRAPH98_PORT_ACCESS_PAGE, GRAPH98_PAGE_FRONT);
+        for (i = 0; i < byte_count; ++i) {
+            plane[(uint16_t)(vram_offset + i)] = graph98_image_work[i];
+        }
+
+        chunk_y = (uint16_t)(chunk_y + chunk_lines);
+    }
+}
+
+int __attribute__((optimize("Os")))
+graph98_draw_scene_file_trans_vram(
+    const char *background_path,
+    const char *left_sprite_path,
+    const char *right_sprite_path,
+    int left_x,
+    int right_x,
+    int stand_y,
+    unsigned char transparent_color)
+{
+    int ok;
+
+    ok = 0;
+
+    /* Page 0 remains displayed until page 1 contains the complete scene. */
+    graph98_out8(GRAPH98_PORT_DISPLAY_PAGE, GRAPH98_PAGE_FRONT);
+    if (background_path == 0 || background_path[0] == '\0') {
+        goto cleanup;
+    }
+
+    graph98_out8(GRAPH98_PORT_ACCESS_PAGE, GRAPH98_PAGE_BACK);
+    if (!graph98_load_g98(background_path)) {
+        goto cleanup;
+    }
+    if (left_sprite_path != 0 && left_sprite_path[0] != '\0' &&
+        !graph98_draw_sprite_file_trans(
+            left_sprite_path, left_x, stand_y, transparent_color)) {
+        goto cleanup;
+    }
+    if (right_sprite_path != 0 && right_sprite_path[0] != '\0' &&
+        !graph98_draw_sprite_file_trans(
+            right_sprite_path, right_x, stand_y, transparent_color)) {
+        goto cleanup;
+    }
+
+    /* No file I/O or transparency work occurs after this first VSYNC. */
+    graph98_wait_vsync();
+    graph98_out8(GRAPH98_PORT_DISPLAY_PAGE, GRAPH98_PAGE_BACK);
+
+    graph98_copy_vram_plane_to_front(GRAPH98_VRAM_BLUE);
+    graph98_copy_vram_plane_to_front(GRAPH98_VRAM_RED);
+    graph98_copy_vram_plane_to_front(GRAPH98_VRAM_GREEN);
+    graph98_copy_vram_plane_to_front(GRAPH98_VRAM_INTENS);
+
+    graph98_wait_vsync();
+    graph98_out8(GRAPH98_PORT_DISPLAY_PAGE, GRAPH98_PAGE_FRONT);
+    ok = 1;
+
+cleanup:
+    graph98_restore_default_pages();
     return ok;
 }
 

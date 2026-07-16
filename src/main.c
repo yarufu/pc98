@@ -81,6 +81,9 @@ static void text98_hide_cursor(void);
 static void text98_clear_screen(void);
 static void ui_draw_background(const char *bg_file);
 static void ui_draw_background_interlace(const char *bg_file);
+static int ui_draw_current_scene_vram(const char *bg_file,
+                                      const char *left_sprite,
+                                      const char *right_sprite);
 static void ui_draw_message_window(void);
 static void ui_set_message_box(int x0, int y0, int x1, int y1);
 static int ui_get_message_line_chars(void);
@@ -239,6 +242,20 @@ static void ui_draw_background(const char *bg_file)
 static void ui_draw_background_interlace(const char *bg_file)
 {
     ui_draw_background_effect(bg_file, 1, "bg interlace load failed: %s");
+}
+
+static int ui_draw_current_scene_vram(const char *bg_file,
+                                      const char *left_sprite,
+                                      const char *right_sprite)
+{
+    if (graph98_draw_scene_file_trans_vram(
+            bg_file, left_sprite, right_sprite,
+            STAND_LEFT_X, STAND_RIGHT_X, STAND_Y, 0)) {
+        return 1;
+    }
+
+    debug_log("scene draw failed: bg=%s", bg_file != 0 ? bg_file : "");
+    return 0;
 }
 
 static void ui_refresh_stand_only(const char *bg_file,
@@ -700,7 +717,12 @@ static void restore_scene_after_load(void)
 {
     graph98_restore_default_pages();
     restore_palette_after_load();
-    ui_redraw_current_scene_from_state();
+    if (!ui_draw_current_scene_vram(g_state.bg_file,
+                                    g_state.left_sprite,
+                                    g_state.right_sprite)) {
+        graph98_restore_default_pages();
+        ui_redraw_current_scene_from_state();
+    }
     resume_bgm_after_load();
 }
 
@@ -855,6 +877,7 @@ int main(void)
         script_context.set_message_box = ui_set_message_box;
         script_context.draw_background = ui_draw_background;
         script_context.draw_background_interlace = ui_draw_background_interlace;
+        script_context.draw_scene_vram = ui_draw_current_scene_vram;
         script_context.draw_stand = ui_draw_stand;
         script_context.refresh_left_stand_only_interlace =
             ui_refresh_left_stand_only_interlace;

@@ -30,6 +30,9 @@ typedef struct {
     void (*set_message_box)(int x0, int y0, int x1, int y1);
     void (*draw_background)(const char *bg_file);
     void (*draw_background_interlace)(const char *bg_file);
+    int (*draw_scene_vram)(const char *bg_file,
+                           const char *left_sprite,
+                           const char *right_sprite);
     void (*draw_stand)(const char *sprite_file, int x, int y);
     void (*refresh_left_stand_only_interlace)(const char *bg_file,
                                               const char *sprite_file);

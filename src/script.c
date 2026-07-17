@@ -471,7 +471,10 @@ is_status_number(const char *name)
 {
     return strcmp(name, "hour") == 0 ||
            strcmp(name, "minute") == 0 ||
-           strcmp(name, "money") == 0;
+           strcmp(name, "money") == 0 ||
+           strcmp(name, "month") == 0 ||
+           strcmp(name, "day") == 0 ||
+           strcmp(name, "weekday") == 0;
 }
 
 static enum CommandResult handle_flag_command(const ScriptContext *ctx,

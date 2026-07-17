@@ -30,17 +30,29 @@
 #define CHOICE_COLUMNS 2
 
 #define STATUS_X             549
+#define STATUS_LEFT_X         13
+#define STATUS_WEEKDAY_X      29
 #define STATUS_TIME_Y        326
 #define STATUS_MONEY_Y       354
 #define STATUS_CHAR_WIDTH     16
 #define STATUS_CHAR_HEIGHT    16
 #define STATUS_CHAR_COUNT      5
 #define STATUS_X1 (STATUS_X + STATUS_CHAR_WIDTH * STATUS_CHAR_COUNT - 1)
+#define STATUS_LEFT_X1 \
+    (STATUS_LEFT_X + STATUS_CHAR_WIDTH * STATUS_CHAR_COUNT - 1)
+#define STATUS_WEEKDAY_X1 \
+    (STATUS_WEEKDAY_X + STATUS_CHAR_WIDTH * 3 - 1)
 #define STATUS_TIME_Y1 (STATUS_TIME_Y + STATUS_CHAR_HEIGHT - 1)
 #define STATUS_MONEY_Y1 (STATUS_MONEY_Y + STATUS_CHAR_HEIGHT - 1)
 #define STATUS_PANEL_COLOR    15
 #define STATUS_DIGIT_JIS  0x2330
 #define STATUS_COLON_JIS  0x2127
+#define STATUS_SLASH_JIS  0x213F
+#define STATUS_YOU_JIS    0x4D4B
+
+static const uint16_t g_status_weekday_jis[7] = {
+    0x467C, 0x376E, 0x3250, 0x3F65, 0x4C5A, 0x3662, 0x455A
+};
 
 static GameFlag g_flags[MAX_FLAGS];
 static GameState g_state;
@@ -238,6 +250,13 @@ static void ui_draw_status_digit(int x, int y, int digit)
     ui_draw_status_char(x, y, (uint16_t)(STATUS_DIGIT_JIS + digit));
 }
 
+static void __attribute__((noinline, optimize("Os")))
+ui_draw_status_2digit(int x, int y, int value)
+{
+    ui_draw_status_digit(x, y, value / 10);
+    ui_draw_status_digit(x + STATUS_CHAR_WIDTH, y, value % 10);
+}
+
 static void __attribute__((optimize("Os")))
 ui_refresh_status_ui(int erase)
 {
@@ -246,6 +265,9 @@ ui_refresh_status_ui(int erase)
     int hour;
     int minute;
     int money;
+    int month;
+    int day;
+    int weekday;
     int divisor;
     int started;
     int back_ready;
@@ -254,6 +276,9 @@ ui_refresh_status_ui(int erase)
     hour = 0;
     minute = 0;
     money = 0;
+    month = 0;
+    day = 0;
+    weekday = -1;
 
     for (i = 0; i < MAX_FLAGS; ++i) {
         if (strcmp(g_flags[i].name, "status_ui") == 0) {
@@ -264,6 +289,12 @@ ui_refresh_status_ui(int erase)
             minute = g_flags[i].value;
         } else if (strcmp(g_flags[i].name, "money") == 0) {
             money = g_flags[i].value;
+        } else if (strcmp(g_flags[i].name, "month") == 0) {
+            month = g_flags[i].value;
+        } else if (strcmp(g_flags[i].name, "day") == 0) {
+            day = g_flags[i].value;
+        } else if (strcmp(g_flags[i].name, "weekday") == 0) {
+            weekday = g_flags[i].value;
         }
     }
 
@@ -276,6 +307,47 @@ ui_refresh_status_ui(int erase)
     if (minute < 0) minute = 0;
     if (minute > 99) minute = 99;
     if (money < 0) money = 0;
+    if (month < 0) month = 0;
+    if (month > 99) month = 99;
+    if (day < 0) day = 0;
+    if (day > 99) day = 99;
+
+    back_ready = graph98_prepare_rect_back_vram(
+        STATUS_LEFT_X, STATUS_TIME_Y, STATUS_LEFT_X1, STATUS_MONEY_Y1);
+    if (!back_ready) {
+        graph98_restore_default_pages();
+    }
+
+    graph98_boxfill(STATUS_LEFT_X, STATUS_TIME_Y,
+                    STATUS_LEFT_X1, STATUS_TIME_Y1, STATUS_PANEL_COLOR);
+    graph98_boxfill(STATUS_WEEKDAY_X, STATUS_MONEY_Y,
+                    STATUS_WEEKDAY_X1, STATUS_MONEY_Y1,
+                    STATUS_PANEL_COLOR);
+
+    if (!erase) {
+        ui_draw_status_2digit(STATUS_LEFT_X, STATUS_TIME_Y, month);
+        ui_draw_status_char(STATUS_LEFT_X + STATUS_CHAR_WIDTH * 2,
+                            STATUS_TIME_Y, STATUS_SLASH_JIS);
+        ui_draw_status_2digit(STATUS_LEFT_X + STATUS_CHAR_WIDTH * 3,
+                              STATUS_TIME_Y, day);
+
+        if (weekday >= 0 && weekday < 7) {
+            ui_draw_status_char(STATUS_WEEKDAY_X, STATUS_MONEY_Y,
+                                g_status_weekday_jis[weekday]);
+            ui_draw_status_char(STATUS_WEEKDAY_X + STATUS_CHAR_WIDTH,
+                                STATUS_MONEY_Y, STATUS_YOU_JIS);
+            ui_draw_status_char(STATUS_WEEKDAY_X + STATUS_CHAR_WIDTH * 2,
+                                STATUS_MONEY_Y, g_status_weekday_jis[0]);
+        }
+    }
+
+    if (back_ready &&
+        !graph98_present_rect_back_vram(
+            STATUS_LEFT_X, STATUS_TIME_Y,
+            STATUS_LEFT_X1, STATUS_MONEY_Y1)) {
+        debug_log("status left rect present failed");
+        graph98_restore_default_pages();
+    }
 
     back_ready = graph98_prepare_rect_back_vram(
         STATUS_X, STATUS_TIME_Y, STATUS_X1, STATUS_MONEY_Y1);
@@ -289,15 +361,11 @@ ui_refresh_status_ui(int erase)
                     STATUS_X1, STATUS_MONEY_Y1, STATUS_PANEL_COLOR);
 
     if (!erase) {
-        ui_draw_status_digit(STATUS_X, STATUS_TIME_Y, hour / 10);
-        ui_draw_status_digit(STATUS_X + STATUS_CHAR_WIDTH,
-                             STATUS_TIME_Y, hour % 10);
+        ui_draw_status_2digit(STATUS_X, STATUS_TIME_Y, hour);
         ui_draw_status_char(STATUS_X + STATUS_CHAR_WIDTH * 2,
                             STATUS_TIME_Y, STATUS_COLON_JIS);
-        ui_draw_status_digit(STATUS_X + STATUS_CHAR_WIDTH * 3,
-                             STATUS_TIME_Y, minute / 10);
-        ui_draw_status_digit(STATUS_X + STATUS_CHAR_WIDTH * 4,
-                             STATUS_TIME_Y, minute % 10);
+        ui_draw_status_2digit(STATUS_X + STATUS_CHAR_WIDTH * 3,
+                              STATUS_TIME_Y, minute);
 
         divisor = 10000;
         started = 0;
@@ -688,6 +756,9 @@ static void ui_hide_message_window_until_resume(void)
                !graph98_load_g98_rect(g_state.bg_file,
                                       g_msgbox_x0, g_msgbox_y0,
                                       g_msgbox_x1, g_msgbox_y1) ||
+               !graph98_load_g98_rect(g_state.bg_file,
+                                      STATUS_LEFT_X, STATUS_TIME_Y,
+                                      STATUS_LEFT_X1, STATUS_MONEY_Y1) ||
                !graph98_load_g98_rect(g_state.bg_file,
                                       STATUS_X, STATUS_TIME_Y,
                                       STATUS_X1, STATUS_MONEY_Y1)) {

@@ -44,6 +44,12 @@
      (GRAPH98_G98_INTERLACE_LINES_PER_SIDE * GRAPH98_G98_INTERLACE_PERIOD))
 
 #define GRAPH98_SPRITE_MAX_WIDTH 256u
+#define GRAPH98_MONEY_SPRITE_WIDTH 160u
+#define GRAPH98_MONEY_SPRITE_HEIGHT 16u
+#define GRAPH98_MONEY_DIGIT_WIDTH 16u
+#define GRAPH98_MONEY_DIGIT_COUNT 5u
+#define GRAPH98_MONEY_SPRITE_BYTES \
+    (GRAPH98_MONEY_SPRITE_WIDTH * GRAPH98_MONEY_SPRITE_HEIGHT)
 
 #define GRAPH98_STAND_WIDTH 256u
 #define GRAPH98_STAND_HEIGHT 290u
@@ -89,6 +95,9 @@ _Static_assert(GRAPH98_VRAM_PLANE_SIZE == 32000u,
                "full-screen VRAM plane must contain 32,000 bytes");
 _Static_assert(GRAPH98_IMAGE_WORK_SIZE >= GRAPH98_SPRITE_MAX_WIDTH,
                "sprite chunk must contain at least one line");
+_Static_assert(GRAPH98_MONEY_SPRITE_BYTES + GRAPH98_MONEY_DIGIT_COUNT <=
+                   GRAPH98_IMAGE_WORK_SIZE,
+               "money sprite and digits must fit image work buffer");
 _Static_assert(GRAPH98_G98_CHUNK_LINES >= 1u,
                "G98 chunk must contain at least one line");
 _Static_assert(GRAPH98_G98_RECT_CHUNK_LINES >= 1u,
@@ -829,6 +838,18 @@ static int graph98_read_sprite_header(FILE *fp,
     header->version = raw[8];
 
     return 1;
+}
+
+static int __attribute__((noinline, optimize("Os")))
+graph98_is_valid_sprite_header(const struct graph98_sprite_header *header)
+{
+    return header->magic[0] == GRAPH98_SPRITE_MAGIC_0 &&
+           header->magic[1] == GRAPH98_SPRITE_MAGIC_1 &&
+           header->magic[2] == GRAPH98_SPRITE_MAGIC_2 &&
+           header->magic[3] == GRAPH98_SPRITE_MAGIC_3 &&
+           header->version == GRAPH98_SPRITE_VERSION &&
+           header->width != 0 && header->height != 0 &&
+           header->width <= GRAPH98_SPRITE_MAX_WIDTH;
 }
 
 void graph98_wait_vsync(void)
@@ -1813,25 +1834,7 @@ int graph98_draw_sprite_file_trans(const char *path, int x, int y,
         return 0;
     }
 
-    if (header.magic[0] != GRAPH98_SPRITE_MAGIC_0 ||
-        header.magic[1] != GRAPH98_SPRITE_MAGIC_1 ||
-        header.magic[2] != GRAPH98_SPRITE_MAGIC_2 ||
-        header.magic[3] != GRAPH98_SPRITE_MAGIC_3) {
-        fclose(fp);
-        return 0;
-    }
-
-    if (header.version != GRAPH98_SPRITE_VERSION) {
-        fclose(fp);
-        return 0;
-    }
-
-    if (header.width == 0 || header.height == 0) {
-        fclose(fp);
-        return 0;
-    }
-
-    if (header.width > GRAPH98_SPRITE_MAX_WIDTH) {
+    if (!graph98_is_valid_sprite_header(&header)) {
         fclose(fp);
         return 0;
     }
@@ -1903,6 +1906,66 @@ int graph98_draw_sprite_file_trans(const char *path, int x, int y,
     }
 
     fclose(fp);
+    return 1;
+}
+
+int __attribute__((optimize("Os")))
+graph98_draw_money_digits_file(const char *path, int x, int y, int value)
+{
+    struct graph98_sprite_header header;
+    FILE *fp;
+    uint16_t line;
+    int first;
+    int digit;
+
+    if (value < 0 || value > 32767 ||
+        x < 0 || x > GRAPH98_WIDTH - (int)(GRAPH98_MONEY_DIGIT_WIDTH *
+                                           GRAPH98_MONEY_DIGIT_COUNT) ||
+        y < 0 || y > GRAPH98_HEIGHT - (int)GRAPH98_MONEY_SPRITE_HEIGHT) {
+        return 0;
+    }
+
+    fp = fopen(path, "rb");
+    if (fp == 0) {
+        return 0;
+    }
+
+    if (!graph98_read_sprite_header(fp, &header) ||
+        !graph98_is_valid_sprite_header(&header) ||
+        header.width != GRAPH98_MONEY_SPRITE_WIDTH ||
+        header.height != GRAPH98_MONEY_SPRITE_HEIGHT ||
+        fread(graph98_image_work, 1u, GRAPH98_MONEY_SPRITE_BYTES, fp) !=
+            GRAPH98_MONEY_SPRITE_BYTES) {
+        fclose(fp);
+        return 0;
+    }
+    fclose(fp);
+
+    first = (int)GRAPH98_MONEY_DIGIT_COUNT - 1;
+    do {
+        graph98_image_work[GRAPH98_MONEY_SPRITE_BYTES + first] =
+            (uint8_t)(value % 10);
+        value /= 10;
+        --first;
+    } while (value != 0);
+    ++first;
+
+    for (line = 0; line < GRAPH98_MONEY_SPRITE_HEIGHT; ++line) {
+        const uint8_t *row;
+
+        row = graph98_image_work + line * GRAPH98_MONEY_SPRITE_WIDTH;
+        for (digit = first; digit < (int)GRAPH98_MONEY_DIGIT_COUNT; ++digit) {
+            graph98_draw_sprite_line_trans_fast(
+                row,
+                graph98_image_work[GRAPH98_MONEY_SPRITE_BYTES + digit] *
+                    GRAPH98_MONEY_DIGIT_WIDTH,
+                GRAPH98_MONEY_DIGIT_WIDTH,
+                x + digit * GRAPH98_MONEY_DIGIT_WIDTH,
+                y + line,
+                0);
+        }
+    }
+
     return 1;
 }
 

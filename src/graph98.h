@@ -35,6 +35,7 @@ int graph98_present_rect_back_vram(int x0, int y0, int x1, int y1);
 void graph98_restore_default_pages(void);
 int graph98_draw_sprite_file_trans(const char *path, int x, int y,
                                    unsigned char transparent_color);
+int graph98_draw_money_digits_file(const char *path, int x, int y, int value);
 int graph98_draw_stand_file_trans_interlace(
     const char *background_path, const char *sprite_path,
     int x, int y, unsigned char transparent_color);

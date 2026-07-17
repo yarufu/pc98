@@ -45,6 +45,7 @@
 #define STATUS_TIME_Y1 (STATUS_TIME_Y + STATUS_CHAR_HEIGHT - 1)
 #define STATUS_MONEY_Y1 (STATUS_MONEY_Y + STATUS_CHAR_HEIGHT - 1)
 #define STATUS_PANEL_COLOR    15
+#define STATUS_MONEY_SPRITE "MONEYNUM.SPR"
 #define STATUS_DIGIT_JIS  0x2330
 #define STATUS_COLON_JIS  0x2127
 #define STATUS_SLASH_JIS  0x213F
@@ -367,18 +368,22 @@ ui_refresh_status_ui(int erase)
         ui_draw_status_2digit(STATUS_X + STATUS_CHAR_WIDTH * 3,
                               STATUS_TIME_Y, minute);
 
-        divisor = 10000;
-        started = 0;
-        for (i = 0; i < STATUS_CHAR_COUNT; ++i) {
-            int digit;
+        if (!graph98_draw_money_digits_file(
+                STATUS_MONEY_SPRITE, STATUS_X, STATUS_MONEY_Y, money)) {
+            debug_log("money digit sprite load failed");
+            divisor = 10000;
+            started = 0;
+            for (i = 0; i < STATUS_CHAR_COUNT; ++i) {
+                int digit;
 
-            digit = (money / divisor) % 10;
-            if (digit != 0 || started || divisor == 1) {
-                ui_draw_status_digit(STATUS_X + STATUS_CHAR_WIDTH * i,
-                                     STATUS_MONEY_Y, digit);
-                started = 1;
+                digit = (money / divisor) % 10;
+                if (digit != 0 || started || divisor == 1) {
+                    ui_draw_status_digit(STATUS_X + STATUS_CHAR_WIDTH * i,
+                                         STATUS_MONEY_Y, digit);
+                    started = 1;
+                }
+                divisor /= 10;
             }
-            divisor /= 10;
         }
     }
 

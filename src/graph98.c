@@ -95,9 +95,8 @@ _Static_assert(GRAPH98_VRAM_PLANE_SIZE == 32000u,
                "full-screen VRAM plane must contain 32,000 bytes");
 _Static_assert(GRAPH98_IMAGE_WORK_SIZE >= GRAPH98_SPRITE_MAX_WIDTH,
                "sprite chunk must contain at least one line");
-_Static_assert(GRAPH98_MONEY_SPRITE_BYTES + GRAPH98_MONEY_DIGIT_COUNT <=
-                   GRAPH98_IMAGE_WORK_SIZE,
-               "money sprite and digits must fit image work buffer");
+_Static_assert(GRAPH98_MONEY_SPRITE_BYTES <= GRAPH98_IMAGE_WORK_SIZE,
+               "money sprite must fit image work buffer");
 _Static_assert(GRAPH98_G98_CHUNK_LINES >= 1u,
                "G98 chunk must contain at least one line");
 _Static_assert(GRAPH98_G98_RECT_CHUNK_LINES >= 1u,
@@ -1909,19 +1908,42 @@ int graph98_draw_sprite_file_trans(const char *path, int x, int y,
     return 1;
 }
 
+static void __attribute__((noinline, optimize("Os")))
+graph98_draw_status_digit(int x, int y, int digit)
+{
+    uint16_t line;
+
+    for (line = 0; line < GRAPH98_MONEY_SPRITE_HEIGHT; ++line) {
+        graph98_draw_sprite_line_trans_fast(
+            graph98_image_work + line * GRAPH98_MONEY_SPRITE_WIDTH,
+            digit * GRAPH98_MONEY_DIGIT_WIDTH,
+            GRAPH98_MONEY_DIGIT_WIDTH,
+            x, y + line, 0);
+    }
+}
+
 int __attribute__((optimize("Os")))
-graph98_draw_money_digits_file(const char *path, int x, int y, int value)
+graph98_draw_status_digits_file(const char *path,
+                                int time_x, int time_y,
+                                int money_x, int money_y,
+                                int hour, int minute, int money)
 {
     struct graph98_sprite_header header;
     FILE *fp;
-    uint16_t line;
-    int first;
-    int digit;
 
-    if (value < 0 || value > 32767 ||
-        x < 0 || x > GRAPH98_WIDTH - (int)(GRAPH98_MONEY_DIGIT_WIDTH *
-                                           GRAPH98_MONEY_DIGIT_COUNT) ||
-        y < 0 || y > GRAPH98_HEIGHT - (int)GRAPH98_MONEY_SPRITE_HEIGHT) {
+    if (path == 0 || path[0] == '\0' ||
+        hour < 0 || hour > 99 || minute < 0 || minute > 99 ||
+        money < 0 || money > 32767 ||
+        time_x < 0 ||
+        time_x > GRAPH98_WIDTH - (int)(GRAPH98_MONEY_DIGIT_WIDTH *
+                                        GRAPH98_MONEY_DIGIT_COUNT) ||
+        money_x < 0 ||
+        money_x > GRAPH98_WIDTH - (int)(GRAPH98_MONEY_DIGIT_WIDTH *
+                                         GRAPH98_MONEY_DIGIT_COUNT) ||
+        time_y < 0 ||
+        time_y > GRAPH98_HEIGHT - (int)GRAPH98_MONEY_SPRITE_HEIGHT ||
+        money_y < 0 ||
+        money_y > GRAPH98_HEIGHT - (int)GRAPH98_MONEY_SPRITE_HEIGHT) {
         return 0;
     }
 
@@ -1941,30 +1963,21 @@ graph98_draw_money_digits_file(const char *path, int x, int y, int value)
     }
     fclose(fp);
 
-    first = (int)GRAPH98_MONEY_DIGIT_COUNT - 1;
+    graph98_draw_status_digit(time_x, time_y, hour / 10);
+    graph98_draw_status_digit(time_x + GRAPH98_MONEY_DIGIT_WIDTH,
+                              time_y, hour % 10);
+    graph98_draw_status_digit(time_x + GRAPH98_MONEY_DIGIT_WIDTH * 3,
+                              time_y, minute / 10);
+    graph98_draw_status_digit(time_x + GRAPH98_MONEY_DIGIT_WIDTH * 4,
+                              time_y, minute % 10);
+
+    money_x += GRAPH98_MONEY_DIGIT_WIDTH *
+               ((int)GRAPH98_MONEY_DIGIT_COUNT - 1);
     do {
-        graph98_image_work[GRAPH98_MONEY_SPRITE_BYTES + first] =
-            (uint8_t)(value % 10);
-        value /= 10;
-        --first;
-    } while (value != 0);
-    ++first;
-
-    for (line = 0; line < GRAPH98_MONEY_SPRITE_HEIGHT; ++line) {
-        const uint8_t *row;
-
-        row = graph98_image_work + line * GRAPH98_MONEY_SPRITE_WIDTH;
-        for (digit = first; digit < (int)GRAPH98_MONEY_DIGIT_COUNT; ++digit) {
-            graph98_draw_sprite_line_trans_fast(
-                row,
-                graph98_image_work[GRAPH98_MONEY_SPRITE_BYTES + digit] *
-                    GRAPH98_MONEY_DIGIT_WIDTH,
-                GRAPH98_MONEY_DIGIT_WIDTH,
-                x + digit * GRAPH98_MONEY_DIGIT_WIDTH,
-                y + line,
-                0);
-        }
-    }
+        graph98_draw_status_digit(money_x, money_y, money % 10);
+        money /= 10;
+        money_x -= GRAPH98_MONEY_DIGIT_WIDTH;
+    } while (money != 0);
 
     return 1;
 }

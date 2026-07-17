@@ -362,15 +362,15 @@ ui_refresh_status_ui(int erase)
                     STATUS_X1, STATUS_MONEY_Y1, STATUS_PANEL_COLOR);
 
     if (!erase) {
-        ui_draw_status_2digit(STATUS_X, STATUS_TIME_Y, hour);
-        ui_draw_status_char(STATUS_X + STATUS_CHAR_WIDTH * 2,
-                            STATUS_TIME_Y, STATUS_COLON_JIS);
-        ui_draw_status_2digit(STATUS_X + STATUS_CHAR_WIDTH * 3,
-                              STATUS_TIME_Y, minute);
-
-        if (!graph98_draw_money_digits_file(
-                STATUS_MONEY_SPRITE, STATUS_X, STATUS_MONEY_Y, money)) {
-            debug_log("money digit sprite load failed");
+        if (!graph98_draw_status_digits_file(
+                STATUS_MONEY_SPRITE,
+                STATUS_X, STATUS_TIME_Y,
+                STATUS_X, STATUS_MONEY_Y,
+                hour, minute, money)) {
+            debug_log("status digit sprite load failed");
+            ui_draw_status_2digit(STATUS_X, STATUS_TIME_Y, hour);
+            ui_draw_status_2digit(STATUS_X + STATUS_CHAR_WIDTH * 3,
+                                  STATUS_TIME_Y, minute);
             divisor = 10000;
             started = 0;
             for (i = 0; i < STATUS_CHAR_COUNT; ++i) {
@@ -385,6 +385,8 @@ ui_refresh_status_ui(int erase)
                 divisor /= 10;
             }
         }
+        ui_draw_status_char(STATUS_X + STATUS_CHAR_WIDTH * 2,
+                            STATUS_TIME_Y, STATUS_COLON_JIS);
     }
 
     if (back_ready &&

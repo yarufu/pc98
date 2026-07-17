@@ -41,6 +41,7 @@ typedef struct {
     void (*refresh_stand_only)(const char *bg_file,
                                const char *sprite_file,
                                int x);
+    void (*refresh_status_ui)(int erase);
     void (*draw_message_jis)(const uint16_t *name, int name_len,
                              const uint16_t *jis_codes, int count);
     void (*reset_choice_lines)(void);

@@ -29,6 +29,19 @@
 #define MAX_CHOICE_DRAW_CHARS 8
 #define CHOICE_COLUMNS 2
 
+#define STATUS_X             549
+#define STATUS_TIME_Y        326
+#define STATUS_MONEY_Y       354
+#define STATUS_CHAR_WIDTH     16
+#define STATUS_CHAR_HEIGHT    16
+#define STATUS_CHAR_COUNT      5
+#define STATUS_X1 (STATUS_X + STATUS_CHAR_WIDTH * STATUS_CHAR_COUNT - 1)
+#define STATUS_TIME_Y1 (STATUS_TIME_Y + STATUS_CHAR_HEIGHT - 1)
+#define STATUS_MONEY_Y1 (STATUS_MONEY_Y + STATUS_CHAR_HEIGHT - 1)
+#define STATUS_PANEL_COLOR    15
+#define STATUS_DIGIT_JIS  0x2330
+#define STATUS_COLON_JIS  0x2127
+
 static GameFlag g_flags[MAX_FLAGS];
 static GameState g_state;
 static int g_pmd_available = 0;
@@ -88,6 +101,7 @@ static int ui_draw_current_scene_vram(const char *bg_file,
 static void ui_draw_message_window(void);
 static void ui_set_message_box(int x0, int y0, int x1, int y1);
 static int ui_get_message_line_chars(void);
+static void ui_refresh_status_ui(int erase);
 static void ui_draw_stand(const char *sprite_file, int x, int y);
 static int ui_draw_message_page_jis(const uint16_t *name, int name_len,
                                     const uint16_t *jis_codes, int count,
@@ -209,6 +223,103 @@ static void ui_draw_message_window(void)
     // graph98_rect(96, 308, 543, 381, 8);
     // graph98_boxfill(109, 313, 531, 392, 0);
     graph98_boxfill(g_msgbox_x0, g_msgbox_y0, g_msgbox_x1, g_msgbox_y1, 0);
+}
+
+static void ui_draw_status_char(int x, int y, uint16_t jis_code)
+{
+    unsigned char font[32];
+
+    get_kanji_font(jis_code, font);
+    draw_jis_char(x, y, font);
+}
+
+static void ui_draw_status_digit(int x, int y, int digit)
+{
+    ui_draw_status_char(x, y, (uint16_t)(STATUS_DIGIT_JIS + digit));
+}
+
+static void __attribute__((optimize("Os")))
+ui_refresh_status_ui(int erase)
+{
+    int i;
+    int enabled;
+    int hour;
+    int minute;
+    int money;
+    int divisor;
+    int started;
+    int back_ready;
+
+    enabled = 0;
+    hour = 0;
+    minute = 0;
+    money = 0;
+
+    for (i = 0; i < MAX_FLAGS; ++i) {
+        if (strcmp(g_flags[i].name, "status_ui") == 0) {
+            enabled = g_flags[i].value;
+        } else if (strcmp(g_flags[i].name, "hour") == 0) {
+            hour = g_flags[i].value;
+        } else if (strcmp(g_flags[i].name, "minute") == 0) {
+            minute = g_flags[i].value;
+        } else if (strcmp(g_flags[i].name, "money") == 0) {
+            money = g_flags[i].value;
+        }
+    }
+
+    if (!erase && !enabled) {
+        return;
+    }
+
+    if (hour < 0) hour = 0;
+    if (hour > 99) hour = 99;
+    if (minute < 0) minute = 0;
+    if (minute > 99) minute = 99;
+    if (money < 0) money = 0;
+
+    back_ready = graph98_prepare_rect_back_vram(
+        STATUS_X, STATUS_TIME_Y, STATUS_X1, STATUS_MONEY_Y1);
+    if (!back_ready) {
+        graph98_restore_default_pages();
+    }
+
+    graph98_boxfill(STATUS_X, STATUS_TIME_Y,
+                    STATUS_X1, STATUS_TIME_Y1, STATUS_PANEL_COLOR);
+    graph98_boxfill(STATUS_X, STATUS_MONEY_Y,
+                    STATUS_X1, STATUS_MONEY_Y1, STATUS_PANEL_COLOR);
+
+    if (!erase) {
+        ui_draw_status_digit(STATUS_X, STATUS_TIME_Y, hour / 10);
+        ui_draw_status_digit(STATUS_X + STATUS_CHAR_WIDTH,
+                             STATUS_TIME_Y, hour % 10);
+        ui_draw_status_char(STATUS_X + STATUS_CHAR_WIDTH * 2,
+                            STATUS_TIME_Y, STATUS_COLON_JIS);
+        ui_draw_status_digit(STATUS_X + STATUS_CHAR_WIDTH * 3,
+                             STATUS_TIME_Y, minute / 10);
+        ui_draw_status_digit(STATUS_X + STATUS_CHAR_WIDTH * 4,
+                             STATUS_TIME_Y, minute % 10);
+
+        divisor = 10000;
+        started = 0;
+        for (i = 0; i < STATUS_CHAR_COUNT; ++i) {
+            int digit;
+
+            digit = (money / divisor) % 10;
+            if (digit != 0 || started || divisor == 1) {
+                ui_draw_status_digit(STATUS_X + STATUS_CHAR_WIDTH * i,
+                                     STATUS_MONEY_Y, digit);
+                started = 1;
+            }
+            divisor /= 10;
+        }
+    }
+
+    if (back_ready &&
+        !graph98_present_rect_back_vram(
+            STATUS_X, STATUS_TIME_Y, STATUS_X1, STATUS_MONEY_Y1)) {
+        debug_log("status rect present failed");
+        graph98_restore_default_pages();
+    }
 }
 
 static void __attribute__((noinline, optimize("Os")))
@@ -451,6 +562,8 @@ static int ui_draw_message_page_jis(const uint16_t *name, int name_len,
         graph98_restore_default_pages();
     }
 
+    ui_refresh_status_ui(0);
+
     return line1_count + line2_count + line3_count;
 }
 
@@ -556,6 +669,7 @@ static void ui_redraw_current_scene_vram_from_state(void)
         graph98_restore_default_pages();
         ui_redraw_current_scene_from_state();
     }
+    ui_refresh_status_ui(0);
 }
 
 /* メッセージ非表示中の待機関数 */
@@ -573,7 +687,10 @@ static void ui_hide_message_window_until_resume(void)
     } else if (g_state.bg_file[0] == '\0' ||
                !graph98_load_g98_rect(g_state.bg_file,
                                       g_msgbox_x0, g_msgbox_y0,
-                                      g_msgbox_x1, g_msgbox_y1)) {
+                                      g_msgbox_x1, g_msgbox_y1) ||
+               !graph98_load_g98_rect(g_state.bg_file,
+                                      STATUS_X, STATUS_TIME_Y,
+                                      STATUS_X1, STATUS_MONEY_Y1)) {
         debug_log("H hide rect restore failed: %s", g_state.bg_file);
         ui_redraw_current_scene_from_state();
     }
@@ -743,12 +860,7 @@ static void restore_scene_after_load(void)
 {
     graph98_restore_default_pages();
     restore_palette_after_load();
-    if (!ui_draw_current_scene_vram(g_state.bg_file,
-                                    g_state.left_sprite,
-                                    g_state.right_sprite)) {
-        graph98_restore_default_pages();
-        ui_redraw_current_scene_from_state();
-    }
+    ui_redraw_current_scene_vram_from_state();
     resume_bgm_after_load();
 }
 
@@ -910,6 +1022,7 @@ int main(void)
         script_context.refresh_right_stand_only_interlace =
             ui_refresh_right_stand_only_interlace;
         script_context.refresh_stand_only = ui_refresh_stand_only;
+        script_context.refresh_status_ui = ui_refresh_status_ui;
         script_context.draw_message_jis = ui_draw_message_jis;
         script_context.reset_choice_lines = reset_choice_lines;
         script_context.store_choice_line = store_choice_line;

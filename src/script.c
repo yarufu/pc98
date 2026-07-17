@@ -466,6 +466,14 @@ static enum CommandResult handle_control_command(const ScriptContext *ctx,
     return COMMAND_NOT_HANDLED;
 }
 
+static int __attribute__((noinline, optimize("Os")))
+is_status_number(const char *name)
+{
+    return strcmp(name, "hour") == 0 ||
+           strcmp(name, "minute") == 0 ||
+           strcmp(name, "money") == 0;
+}
+
 static enum CommandResult handle_flag_command(const ScriptContext *ctx,
                                               FILE *fp,
                                               int *script_line,
@@ -474,12 +482,18 @@ static enum CommandResult handle_flag_command(const ScriptContext *ctx,
     if (strcmp(command->cmd, "#set") == 0) {
         if (command->count >= 2) {
             set_flag_on(ctx, command->arg1);
+            if (strcmp(command->arg1, "status_ui") == 0) {
+                ctx->refresh_status_ui(0);
+            }
         }
         return COMMAND_HANDLED;
     }
     if (strcmp(command->cmd, "#reset") == 0) {
         if (command->count >= 2) {
             set_flag_off(ctx, command->arg1);
+            if (strcmp(command->arg1, "status_ui") == 0) {
+                ctx->refresh_status_ui(1);
+            }
         }
         return COMMAND_HANDLED;
     }
@@ -502,12 +516,18 @@ static enum CommandResult handle_flag_command(const ScriptContext *ctx,
     if (strcmp(command->cmd, "#add") == 0) {
         if (command->count >= 3) {
             add_flag_value(ctx, command->arg1, atoi(command->arg2));
+            if (is_status_number(command->arg1)) {
+                ctx->refresh_status_ui(0);
+            }
         }
         return COMMAND_HANDLED;
     }
     if (strcmp(command->cmd, "#setnum") == 0) {
         if (command->count >= 3) {
             set_flag_value(ctx, command->arg1, atoi(command->arg2));
+            if (is_status_number(command->arg1)) {
+                ctx->refresh_status_ui(0);
+            }
         }
         return COMMAND_HANDLED;
     }
@@ -735,6 +755,8 @@ draw_full_scene(const ScriptContext *ctx,
         ctx->draw_stand(state->right_sprite, STAND_RIGHT_X, STAND_Y);
     }
 
+    ctx->refresh_status_ui(0);
+
     strcpy(render->last_bg_file, state->bg_file);
     strcpy(render->last_left_sprite, state->left_sprite);
     strcpy(render->last_right_sprite, state->right_sprite);
@@ -824,7 +846,8 @@ enum GameResult run_script_sjis(const ScriptContext *ctx)
         ctx->draw_scene_vram == 0 ||
         ctx->refresh_left_stand_only_interlace == 0 ||
         ctx->refresh_right_stand_only_interlace == 0 ||
-        ctx->refresh_stand_only == 0) {
+        ctx->refresh_stand_only == 0 ||
+        ctx->refresh_status_ui == 0) {
         return GAME_RESULT_EXIT_TO_DOS;
     }
 

@@ -50,6 +50,7 @@
 #define STATUS_COLON_JIS  0x2127
 #define STATUS_SLASH_JIS  0x213F
 #define STATUS_YOU_JIS    0x4D4B
+#define STATUS_FIRST_PRESENT (-1)
 
 static const uint16_t g_status_weekday_jis[7] = {
     0x467C, 0x376E, 0x3250, 0x3F65, 0x4C5A, 0x3662, 0x455A
@@ -65,6 +66,7 @@ static int g_mouse_available = 0;
 static int g_request_scene_redraw = 0;
 static int g_request_script_resume = 0;
 static enum SystemAction g_system_action = SYSTEM_ACTION_NONE;
+static int g_status_ui_presented = 0;
 
 /* メッセージボックス座標。初期値は従来と同じ */
 static int g_msgbox_x0 = 109;
@@ -299,9 +301,13 @@ ui_refresh_status_ui(int erase)
         }
     }
 
-    if (!erase && !enabled) {
+    if (erase <= 0 && !enabled) {
         return;
     }
+    if (erase == 0 && !g_status_ui_presented) {
+        return;
+    }
+    if (erase < 0) erase = 0;
 
     if (hour < 0) hour = 0;
     if (hour > 99) hour = 99;
@@ -390,6 +396,7 @@ ui_refresh_status_ui(int erase)
             graph98_restore_default_pages();
         }
     }
+    g_status_ui_presented = !erase;
 }
 
 static void __attribute__((noinline, optimize("Os")))
@@ -632,7 +639,7 @@ static int ui_draw_message_page_jis(const uint16_t *name, int name_len,
         graph98_restore_default_pages();
     }
 
-    ui_refresh_status_ui(0);
+    ui_refresh_status_ui(STATUS_FIRST_PRESENT);
 
     return line1_count + line2_count + line3_count;
 }
@@ -931,6 +938,7 @@ static void resume_bgm_after_load(void)
 
 static void restore_scene_after_load(void)
 {
+    g_status_ui_presented = 1;
     graph98_restore_default_pages();
     restore_palette_after_load();
     ui_redraw_current_scene_vram_from_state();
@@ -1064,6 +1072,7 @@ int main(void)
     input_init(&input_context);
 
     for (;;) {
+        g_status_ui_presented = 0;
         g_system_action = SYSTEM_ACTION_NONE;
 
         title_context.pmd_available = g_pmd_available;

@@ -335,11 +335,6 @@ ui_refresh_status_ui(int erase)
                     STATUS_X1, STATUS_MONEY_Y1, STATUS_PANEL_COLOR);
 
     if (!erase) {
-        ui_draw_status_char(STATUS_LEFT_X + STATUS_CHAR_WIDTH * 2,
-                            STATUS_TIME_Y, STATUS_SLASH_JIS);
-
-        ui_draw_status_char(STATUS_X + STATUS_CHAR_WIDTH * 2,
-                            STATUS_TIME_Y, STATUS_COLON_JIS);
         if (!graph98_draw_status_file(
                 STATUS_SPRITE_FILE,
                 STATUS_LEFT_X, STATUS_X,
@@ -348,6 +343,8 @@ ui_refresh_status_ui(int erase)
                 hour, minute, money)) {
             debug_log("status sprite load failed");
             ui_draw_status_2digit(STATUS_LEFT_X, STATUS_TIME_Y, month);
+            ui_draw_status_char(STATUS_LEFT_X + STATUS_CHAR_WIDTH * 2,
+                                STATUS_TIME_Y, STATUS_SLASH_JIS);
             ui_draw_status_2digit(STATUS_LEFT_X + STATUS_CHAR_WIDTH * 3,
                                   STATUS_TIME_Y, day);
             if (weekday >= 0 && weekday < 7) {
@@ -360,6 +357,8 @@ ui_refresh_status_ui(int erase)
                     STATUS_MONEY_Y, g_status_weekday_jis[0]);
             }
             ui_draw_status_2digit(STATUS_X, STATUS_TIME_Y, hour);
+            ui_draw_status_char(STATUS_X + STATUS_CHAR_WIDTH * 2,
+                                STATUS_TIME_Y, STATUS_COLON_JIS);
             ui_draw_status_2digit(STATUS_X + STATUS_CHAR_WIDTH * 3,
                                   STATUS_TIME_Y, minute);
             divisor = 10000;

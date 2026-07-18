@@ -1976,6 +1976,8 @@ graph98_draw_status_file(const char *path,
     fclose(fp);
 
     graph98_draw_status_2digit(date_x, upper_y, month);
+    graph98_draw_status_cell(date_x + GRAPH98_STATUS_CELL_SIZE * 2,
+                             upper_y, 8, 1);
     graph98_draw_status_2digit(date_x + GRAPH98_STATUS_CELL_SIZE * 3,
                                upper_y, day);
     if (weekday >= 0 && weekday < 7) {
@@ -1987,6 +1989,8 @@ graph98_draw_status_file(const char *path,
                                  lower_y, 0, 1);
     }
     graph98_draw_status_2digit(time_x, upper_y, hour);
+    graph98_draw_status_cell(time_x + GRAPH98_STATUS_CELL_SIZE * 2,
+                             upper_y, 9, 1);
     graph98_draw_status_2digit(time_x + GRAPH98_STATUS_CELL_SIZE * 3,
                                upper_y, minute);
 

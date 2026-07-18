@@ -46,15 +46,7 @@
 #define STATUS_MONEY_Y1 (STATUS_MONEY_Y + STATUS_CHAR_HEIGHT - 1)
 #define STATUS_PANEL_COLOR    15
 #define STATUS_SPRITE_FILE "STATUS.SPR"
-#define STATUS_DIGIT_JIS  0x2330
-#define STATUS_COLON_JIS  0x2127
-#define STATUS_SLASH_JIS  0x213F
-#define STATUS_YOU_JIS    0x4D4B
 #define STATUS_FIRST_PRESENT (-1)
-
-static const uint16_t g_status_weekday_jis[7] = {
-    0x467C, 0x376E, 0x3250, 0x3F65, 0x4C5A, 0x3662, 0x455A
-};
 
 static GameFlag g_flags[MAX_FLAGS];
 static GameState g_state;
@@ -240,26 +232,6 @@ static void ui_draw_message_window(void)
     graph98_boxfill(g_msgbox_x0, g_msgbox_y0, g_msgbox_x1, g_msgbox_y1, 0);
 }
 
-static void ui_draw_status_char(int x, int y, uint16_t jis_code)
-{
-    unsigned char font[32];
-
-    get_kanji_font(jis_code, font);
-    draw_jis_char(x, y, font);
-}
-
-static void ui_draw_status_digit(int x, int y, int digit)
-{
-    ui_draw_status_char(x, y, (uint16_t)(STATUS_DIGIT_JIS + digit));
-}
-
-static void __attribute__((noinline, optimize("Os")))
-ui_draw_status_2digit(int x, int y, int value)
-{
-    ui_draw_status_digit(x, y, value / 10);
-    ui_draw_status_digit(x + STATUS_CHAR_WIDTH, y, value % 10);
-}
-
 static void __attribute__((optimize("Os")))
 ui_refresh_status_ui(int erase)
 {
@@ -271,8 +243,6 @@ ui_refresh_status_ui(int erase)
     int month;
     int day;
     int weekday;
-    int divisor;
-    int started;
     int back_ready;
 
     enabled = 0;
@@ -340,47 +310,13 @@ ui_refresh_status_ui(int erase)
     graph98_boxfill(STATUS_X, STATUS_MONEY_Y,
                     STATUS_X1, STATUS_MONEY_Y1, STATUS_PANEL_COLOR);
 
-    if (!erase) {
-        if (!graph98_draw_status_file(
-                STATUS_SPRITE_FILE,
-                STATUS_LEFT_X, STATUS_X,
-                STATUS_TIME_Y, STATUS_MONEY_Y,
-                month, day, weekday,
-                hour, minute, money)) {
-            debug_log("status sprite load failed");
-            ui_draw_status_2digit(STATUS_LEFT_X, STATUS_TIME_Y, month);
-            ui_draw_status_char(STATUS_LEFT_X + STATUS_CHAR_WIDTH * 2,
-                                STATUS_TIME_Y, STATUS_SLASH_JIS);
-            ui_draw_status_2digit(STATUS_LEFT_X + STATUS_CHAR_WIDTH * 3,
-                                  STATUS_TIME_Y, day);
-            if (weekday >= 0 && weekday < 7) {
-                ui_draw_status_char(STATUS_WEEKDAY_X, STATUS_MONEY_Y,
-                                    g_status_weekday_jis[weekday]);
-                ui_draw_status_char(STATUS_WEEKDAY_X + STATUS_CHAR_WIDTH,
-                                    STATUS_MONEY_Y, STATUS_YOU_JIS);
-                ui_draw_status_char(
-                    STATUS_WEEKDAY_X + STATUS_CHAR_WIDTH * 2,
-                    STATUS_MONEY_Y, g_status_weekday_jis[0]);
-            }
-            ui_draw_status_2digit(STATUS_X, STATUS_TIME_Y, hour);
-            ui_draw_status_char(STATUS_X + STATUS_CHAR_WIDTH * 2,
-                                STATUS_TIME_Y, STATUS_COLON_JIS);
-            ui_draw_status_2digit(STATUS_X + STATUS_CHAR_WIDTH * 3,
-                                  STATUS_TIME_Y, minute);
-            divisor = 10000;
-            started = 0;
-            for (i = 0; i < STATUS_CHAR_COUNT; ++i) {
-                int digit;
-
-                digit = (money / divisor) % 10;
-                if (digit != 0 || started || divisor == 1) {
-                    ui_draw_status_digit(STATUS_X + STATUS_CHAR_WIDTH * i,
-                                         STATUS_MONEY_Y, digit);
-                    started = 1;
-                }
-                divisor /= 10;
-            }
-        }
+    if (!erase && !graph98_draw_status_file(
+            STATUS_SPRITE_FILE,
+            STATUS_LEFT_X, STATUS_X,
+            STATUS_TIME_Y, STATUS_MONEY_Y,
+            month, day, weekday,
+            hour, minute, money)) {
+        debug_log("status sprite load failed");
     }
 
     if (back_ready) {

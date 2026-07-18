@@ -44,12 +44,12 @@
      (GRAPH98_G98_INTERLACE_LINES_PER_SIDE * GRAPH98_G98_INTERLACE_PERIOD))
 
 #define GRAPH98_SPRITE_MAX_WIDTH 256u
-#define GRAPH98_MONEY_SPRITE_WIDTH 160u
-#define GRAPH98_MONEY_SPRITE_HEIGHT 16u
-#define GRAPH98_MONEY_DIGIT_WIDTH 16u
-#define GRAPH98_MONEY_DIGIT_COUNT 5u
-#define GRAPH98_MONEY_SPRITE_BYTES \
-    (GRAPH98_MONEY_SPRITE_WIDTH * GRAPH98_MONEY_SPRITE_HEIGHT)
+#define GRAPH98_STATUS_SPRITE_WIDTH 160u
+#define GRAPH98_STATUS_SPRITE_HEIGHT 32u
+#define GRAPH98_STATUS_CELL_SIZE 16u
+#define GRAPH98_STATUS_FIELD_CELLS 5u
+#define GRAPH98_STATUS_SPRITE_BYTES \
+    (GRAPH98_STATUS_SPRITE_WIDTH * GRAPH98_STATUS_SPRITE_HEIGHT)
 
 #define GRAPH98_STAND_WIDTH 256u
 #define GRAPH98_STAND_HEIGHT 290u
@@ -95,8 +95,10 @@ _Static_assert(GRAPH98_VRAM_PLANE_SIZE == 32000u,
                "full-screen VRAM plane must contain 32,000 bytes");
 _Static_assert(GRAPH98_IMAGE_WORK_SIZE >= GRAPH98_SPRITE_MAX_WIDTH,
                "sprite chunk must contain at least one line");
-_Static_assert(GRAPH98_MONEY_SPRITE_BYTES <= GRAPH98_IMAGE_WORK_SIZE,
-               "money sprite must fit image work buffer");
+_Static_assert(GRAPH98_STATUS_SPRITE_BYTES == 5120u,
+               "status sprite must contain 5,120 bytes");
+_Static_assert(GRAPH98_STATUS_SPRITE_BYTES <= GRAPH98_IMAGE_WORK_SIZE,
+               "status sprite must fit image work buffer");
 _Static_assert(GRAPH98_G98_CHUNK_LINES >= 1u,
                "G98 chunk must contain at least one line");
 _Static_assert(GRAPH98_G98_RECT_CHUNK_LINES >= 1u,
@@ -1909,15 +1911,17 @@ int graph98_draw_sprite_file_trans(const char *path, int x, int y,
 }
 
 static void __attribute__((noinline, optimize("Os")))
-graph98_draw_status_digit(int x, int y, int digit)
+graph98_draw_status_cell(int x, int y, int column, int row)
 {
     uint16_t line;
 
-    for (line = 0; line < GRAPH98_MONEY_SPRITE_HEIGHT; ++line) {
+    row *= GRAPH98_STATUS_CELL_SIZE;
+    for (line = 0; line < GRAPH98_STATUS_CELL_SIZE; ++line) {
         graph98_draw_sprite_line_trans_fast(
-            graph98_image_work + line * GRAPH98_MONEY_SPRITE_WIDTH,
-            digit * GRAPH98_MONEY_DIGIT_WIDTH,
-            GRAPH98_MONEY_DIGIT_WIDTH,
+            graph98_image_work +
+                (row + line) * GRAPH98_STATUS_SPRITE_WIDTH,
+            column * GRAPH98_STATUS_CELL_SIZE,
+            GRAPH98_STATUS_CELL_SIZE,
             x, y + line, 0);
     }
 }
@@ -1925,17 +1929,17 @@ graph98_draw_status_digit(int x, int y, int digit)
 static void __attribute__((noinline, optimize("Os")))
 graph98_draw_status_2digit(int x, int y, int value)
 {
-    graph98_draw_status_digit(x, y, value / 10);
-    graph98_draw_status_digit(x + GRAPH98_MONEY_DIGIT_WIDTH,
-                              y, value % 10);
+    graph98_draw_status_cell(x, y, value / 10, 0);
+    graph98_draw_status_cell(x + GRAPH98_STATUS_CELL_SIZE,
+                             y, value % 10, 0);
 }
 
 int __attribute__((optimize("Os")))
-graph98_draw_status_digits_file(const char *path,
-                                int date_x, int time_x,
-                                int upper_y, int lower_y,
-                                int month, int day,
-                                int hour, int minute, int money)
+graph98_draw_status_file(const char *path,
+                         int date_x, int time_x,
+                         int upper_y, int lower_y,
+                         int month, int day, int weekday,
+                         int hour, int minute, int money)
 {
     struct graph98_sprite_header header;
     FILE *fp;
@@ -1945,13 +1949,13 @@ graph98_draw_status_digits_file(const char *path,
         hour < 0 || hour > 99 || minute < 0 || minute > 99 ||
         money < 0 || money > 32767 ||
         date_x < 0 || time_x < 0 ||
-        date_x > GRAPH98_WIDTH - (int)(GRAPH98_MONEY_DIGIT_WIDTH *
-                                       GRAPH98_MONEY_DIGIT_COUNT) ||
-        time_x > GRAPH98_WIDTH - (int)(GRAPH98_MONEY_DIGIT_WIDTH *
-                                       GRAPH98_MONEY_DIGIT_COUNT) ||
+        date_x > GRAPH98_WIDTH - (int)(GRAPH98_STATUS_CELL_SIZE *
+                                       GRAPH98_STATUS_FIELD_CELLS) ||
+        time_x > GRAPH98_WIDTH - (int)(GRAPH98_STATUS_CELL_SIZE *
+                                       GRAPH98_STATUS_FIELD_CELLS) ||
         upper_y < 0 || lower_y < 0 ||
-        upper_y > GRAPH98_HEIGHT - (int)GRAPH98_MONEY_SPRITE_HEIGHT ||
-        lower_y > GRAPH98_HEIGHT - (int)GRAPH98_MONEY_SPRITE_HEIGHT) {
+        upper_y > GRAPH98_HEIGHT - (int)GRAPH98_STATUS_CELL_SIZE ||
+        lower_y > GRAPH98_HEIGHT - (int)GRAPH98_STATUS_CELL_SIZE) {
         return 0;
     }
 
@@ -1962,28 +1966,36 @@ graph98_draw_status_digits_file(const char *path,
 
     if (!graph98_read_sprite_header(fp, &header) ||
         !graph98_is_valid_sprite_header(&header) ||
-        header.width != GRAPH98_MONEY_SPRITE_WIDTH ||
-        header.height != GRAPH98_MONEY_SPRITE_HEIGHT ||
-        fread(graph98_image_work, 1u, GRAPH98_MONEY_SPRITE_BYTES, fp) !=
-            GRAPH98_MONEY_SPRITE_BYTES) {
+        header.width != GRAPH98_STATUS_SPRITE_WIDTH ||
+        header.height != GRAPH98_STATUS_SPRITE_HEIGHT ||
+        fread(graph98_image_work, 1u, GRAPH98_STATUS_SPRITE_BYTES, fp) !=
+            GRAPH98_STATUS_SPRITE_BYTES) {
         fclose(fp);
         return 0;
     }
     fclose(fp);
 
     graph98_draw_status_2digit(date_x, upper_y, month);
-    graph98_draw_status_2digit(date_x + GRAPH98_MONEY_DIGIT_WIDTH * 3,
+    graph98_draw_status_2digit(date_x + GRAPH98_STATUS_CELL_SIZE * 3,
                                upper_y, day);
+    if (weekday >= 0 && weekday < 7) {
+        graph98_draw_status_cell(date_x + GRAPH98_STATUS_CELL_SIZE,
+                                 lower_y, weekday, 1);
+        graph98_draw_status_cell(date_x + GRAPH98_STATUS_CELL_SIZE * 2,
+                                 lower_y, 7, 1);
+        graph98_draw_status_cell(date_x + GRAPH98_STATUS_CELL_SIZE * 3,
+                                 lower_y, 0, 1);
+    }
     graph98_draw_status_2digit(time_x, upper_y, hour);
-    graph98_draw_status_2digit(time_x + GRAPH98_MONEY_DIGIT_WIDTH * 3,
+    graph98_draw_status_2digit(time_x + GRAPH98_STATUS_CELL_SIZE * 3,
                                upper_y, minute);
 
-    time_x += GRAPH98_MONEY_DIGIT_WIDTH *
-              ((int)GRAPH98_MONEY_DIGIT_COUNT - 1);
+    time_x += GRAPH98_STATUS_CELL_SIZE *
+              ((int)GRAPH98_STATUS_FIELD_CELLS - 1);
     do {
-        graph98_draw_status_digit(time_x, lower_y, money % 10);
+        graph98_draw_status_cell(time_x, lower_y, money % 10, 0);
         money /= 10;
-        time_x -= GRAPH98_MONEY_DIGIT_WIDTH;
+        time_x -= GRAPH98_STATUS_CELL_SIZE;
     } while (money != 0);
 
     return 1;

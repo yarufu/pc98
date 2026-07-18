@@ -35,11 +35,11 @@ int graph98_present_rect_back_vram(int x0, int y0, int x1, int y1);
 void graph98_restore_default_pages(void);
 int graph98_draw_sprite_file_trans(const char *path, int x, int y,
                                    unsigned char transparent_color);
-int graph98_draw_status_digits_file(const char *path,
-                                    int date_x, int time_x,
-                                    int upper_y, int lower_y,
-                                    int month, int day,
-                                    int hour, int minute, int money);
+int graph98_draw_status_file(const char *path,
+                             int date_x, int time_x,
+                             int upper_y, int lower_y,
+                             int month, int day, int weekday,
+                             int hour, int minute, int money);
 int graph98_draw_stand_file_trans_interlace(
     const char *background_path, const char *sprite_path,
     int x, int y, unsigned char transparent_color);

@@ -45,7 +45,7 @@
 #define STATUS_TIME_Y1 (STATUS_TIME_Y + STATUS_CHAR_HEIGHT - 1)
 #define STATUS_MONEY_Y1 (STATUS_MONEY_Y + STATUS_CHAR_HEIGHT - 1)
 #define STATUS_PANEL_COLOR    15
-#define STATUS_MONEY_SPRITE "MONEYNUM.SPR"
+#define STATUS_SPRITE_FILE "STATUS.SPR"
 #define STATUS_DIGIT_JIS  0x2330
 #define STATUS_COLON_JIS  0x2127
 #define STATUS_SLASH_JIS  0x213F
@@ -313,7 +313,7 @@ ui_refresh_status_ui(int erase)
     if (day < 0) day = 0;
     if (day > 99) day = 99;
 
-    /* Rect transfers and MONEYNUM.SPR share graph98_image_work. */
+    /* Rect transfers and STATUS.SPR share graph98_image_work. */
     back_ready = graph98_prepare_rect_back_vram(
         STATUS_LEFT_X, STATUS_TIME_Y, STATUS_LEFT_X1, STATUS_MONEY_Y1);
     if (back_ready) {
@@ -338,26 +338,27 @@ ui_refresh_status_ui(int erase)
         ui_draw_status_char(STATUS_LEFT_X + STATUS_CHAR_WIDTH * 2,
                             STATUS_TIME_Y, STATUS_SLASH_JIS);
 
-        if (weekday >= 0 && weekday < 7) {
-            ui_draw_status_char(STATUS_WEEKDAY_X, STATUS_MONEY_Y,
-                                g_status_weekday_jis[weekday]);
-            ui_draw_status_char(STATUS_WEEKDAY_X + STATUS_CHAR_WIDTH,
-                                STATUS_MONEY_Y, STATUS_YOU_JIS);
-            ui_draw_status_char(STATUS_WEEKDAY_X + STATUS_CHAR_WIDTH * 2,
-                                STATUS_MONEY_Y, g_status_weekday_jis[0]);
-        }
         ui_draw_status_char(STATUS_X + STATUS_CHAR_WIDTH * 2,
                             STATUS_TIME_Y, STATUS_COLON_JIS);
-        if (!graph98_draw_status_digits_file(
-                STATUS_MONEY_SPRITE,
+        if (!graph98_draw_status_file(
+                STATUS_SPRITE_FILE,
                 STATUS_LEFT_X, STATUS_X,
                 STATUS_TIME_Y, STATUS_MONEY_Y,
-                month, day,
+                month, day, weekday,
                 hour, minute, money)) {
-            debug_log("status digit sprite load failed");
+            debug_log("status sprite load failed");
             ui_draw_status_2digit(STATUS_LEFT_X, STATUS_TIME_Y, month);
             ui_draw_status_2digit(STATUS_LEFT_X + STATUS_CHAR_WIDTH * 3,
                                   STATUS_TIME_Y, day);
+            if (weekday >= 0 && weekday < 7) {
+                ui_draw_status_char(STATUS_WEEKDAY_X, STATUS_MONEY_Y,
+                                    g_status_weekday_jis[weekday]);
+                ui_draw_status_char(STATUS_WEEKDAY_X + STATUS_CHAR_WIDTH,
+                                    STATUS_MONEY_Y, STATUS_YOU_JIS);
+                ui_draw_status_char(
+                    STATUS_WEEKDAY_X + STATUS_CHAR_WIDTH * 2,
+                    STATUS_MONEY_Y, g_status_weekday_jis[0]);
+            }
             ui_draw_status_2digit(STATUS_X, STATUS_TIME_Y, hour);
             ui_draw_status_2digit(STATUS_X + STATUS_CHAR_WIDTH * 3,
                                   STATUS_TIME_Y, minute);

@@ -313,8 +313,13 @@ ui_refresh_status_ui(int erase)
     if (day < 0) day = 0;
     if (day > 99) day = 99;
 
+    /* Rect transfers and MONEYNUM.SPR share graph98_image_work. */
     back_ready = graph98_prepare_rect_back_vram(
         STATUS_LEFT_X, STATUS_TIME_Y, STATUS_LEFT_X1, STATUS_MONEY_Y1);
+    if (back_ready) {
+        back_ready = graph98_prepare_rect_back_vram(
+            STATUS_X, STATUS_TIME_Y, STATUS_X1, STATUS_MONEY_Y1);
+    }
     if (!back_ready) {
         graph98_restore_default_pages();
     }
@@ -324,13 +329,14 @@ ui_refresh_status_ui(int erase)
     graph98_boxfill(STATUS_WEEKDAY_X, STATUS_MONEY_Y,
                     STATUS_WEEKDAY_X1, STATUS_MONEY_Y1,
                     STATUS_PANEL_COLOR);
+    graph98_boxfill(STATUS_X, STATUS_TIME_Y,
+                    STATUS_X1, STATUS_TIME_Y1, STATUS_PANEL_COLOR);
+    graph98_boxfill(STATUS_X, STATUS_MONEY_Y,
+                    STATUS_X1, STATUS_MONEY_Y1, STATUS_PANEL_COLOR);
 
     if (!erase) {
-        ui_draw_status_2digit(STATUS_LEFT_X, STATUS_TIME_Y, month);
         ui_draw_status_char(STATUS_LEFT_X + STATUS_CHAR_WIDTH * 2,
                             STATUS_TIME_Y, STATUS_SLASH_JIS);
-        ui_draw_status_2digit(STATUS_LEFT_X + STATUS_CHAR_WIDTH * 3,
-                              STATUS_TIME_Y, day);
 
         if (weekday >= 0 && weekday < 7) {
             ui_draw_status_char(STATUS_WEEKDAY_X, STATUS_MONEY_Y,
@@ -340,34 +346,18 @@ ui_refresh_status_ui(int erase)
             ui_draw_status_char(STATUS_WEEKDAY_X + STATUS_CHAR_WIDTH * 2,
                                 STATUS_MONEY_Y, g_status_weekday_jis[0]);
         }
-    }
-
-    if (back_ready &&
-        !graph98_present_rect_back_vram(
-            STATUS_LEFT_X, STATUS_TIME_Y,
-            STATUS_LEFT_X1, STATUS_MONEY_Y1)) {
-        debug_log("status left rect present failed");
-        graph98_restore_default_pages();
-    }
-
-    back_ready = graph98_prepare_rect_back_vram(
-        STATUS_X, STATUS_TIME_Y, STATUS_X1, STATUS_MONEY_Y1);
-    if (!back_ready) {
-        graph98_restore_default_pages();
-    }
-
-    graph98_boxfill(STATUS_X, STATUS_TIME_Y,
-                    STATUS_X1, STATUS_TIME_Y1, STATUS_PANEL_COLOR);
-    graph98_boxfill(STATUS_X, STATUS_MONEY_Y,
-                    STATUS_X1, STATUS_MONEY_Y1, STATUS_PANEL_COLOR);
-
-    if (!erase) {
+        ui_draw_status_char(STATUS_X + STATUS_CHAR_WIDTH * 2,
+                            STATUS_TIME_Y, STATUS_COLON_JIS);
         if (!graph98_draw_status_digits_file(
                 STATUS_MONEY_SPRITE,
-                STATUS_X, STATUS_TIME_Y,
-                STATUS_X, STATUS_MONEY_Y,
+                STATUS_LEFT_X, STATUS_X,
+                STATUS_TIME_Y, STATUS_MONEY_Y,
+                month, day,
                 hour, minute, money)) {
             debug_log("status digit sprite load failed");
+            ui_draw_status_2digit(STATUS_LEFT_X, STATUS_TIME_Y, month);
+            ui_draw_status_2digit(STATUS_LEFT_X + STATUS_CHAR_WIDTH * 3,
+                                  STATUS_TIME_Y, day);
             ui_draw_status_2digit(STATUS_X, STATUS_TIME_Y, hour);
             ui_draw_status_2digit(STATUS_X + STATUS_CHAR_WIDTH * 3,
                                   STATUS_TIME_Y, minute);
@@ -385,15 +375,20 @@ ui_refresh_status_ui(int erase)
                 divisor /= 10;
             }
         }
-        ui_draw_status_char(STATUS_X + STATUS_CHAR_WIDTH * 2,
-                            STATUS_TIME_Y, STATUS_COLON_JIS);
     }
 
-    if (back_ready &&
-        !graph98_present_rect_back_vram(
-            STATUS_X, STATUS_TIME_Y, STATUS_X1, STATUS_MONEY_Y1)) {
-        debug_log("status rect present failed");
-        graph98_restore_default_pages();
+    if (back_ready) {
+        if (!graph98_present_rect_back_vram(
+                STATUS_LEFT_X, STATUS_TIME_Y,
+                STATUS_LEFT_X1, STATUS_MONEY_Y1)) {
+            debug_log("status left rect present failed");
+            graph98_restore_default_pages();
+        }
+        if (!graph98_present_rect_back_vram(
+                STATUS_X, STATUS_TIME_Y, STATUS_X1, STATUS_MONEY_Y1)) {
+            debug_log("status rect present failed");
+            graph98_restore_default_pages();
+        }
     }
 }
 

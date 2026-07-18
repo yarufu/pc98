@@ -1922,28 +1922,36 @@ graph98_draw_status_digit(int x, int y, int digit)
     }
 }
 
+static void __attribute__((noinline, optimize("Os")))
+graph98_draw_status_2digit(int x, int y, int value)
+{
+    graph98_draw_status_digit(x, y, value / 10);
+    graph98_draw_status_digit(x + GRAPH98_MONEY_DIGIT_WIDTH,
+                              y, value % 10);
+}
+
 int __attribute__((optimize("Os")))
 graph98_draw_status_digits_file(const char *path,
-                                int time_x, int time_y,
-                                int money_x, int money_y,
+                                int date_x, int time_x,
+                                int upper_y, int lower_y,
+                                int month, int day,
                                 int hour, int minute, int money)
 {
     struct graph98_sprite_header header;
     FILE *fp;
 
     if (path == 0 || path[0] == '\0' ||
+        month < 0 || month > 99 || day < 0 || day > 99 ||
         hour < 0 || hour > 99 || minute < 0 || minute > 99 ||
         money < 0 || money > 32767 ||
-        time_x < 0 ||
+        date_x < 0 || time_x < 0 ||
+        date_x > GRAPH98_WIDTH - (int)(GRAPH98_MONEY_DIGIT_WIDTH *
+                                       GRAPH98_MONEY_DIGIT_COUNT) ||
         time_x > GRAPH98_WIDTH - (int)(GRAPH98_MONEY_DIGIT_WIDTH *
-                                        GRAPH98_MONEY_DIGIT_COUNT) ||
-        money_x < 0 ||
-        money_x > GRAPH98_WIDTH - (int)(GRAPH98_MONEY_DIGIT_WIDTH *
-                                         GRAPH98_MONEY_DIGIT_COUNT) ||
-        time_y < 0 ||
-        time_y > GRAPH98_HEIGHT - (int)GRAPH98_MONEY_SPRITE_HEIGHT ||
-        money_y < 0 ||
-        money_y > GRAPH98_HEIGHT - (int)GRAPH98_MONEY_SPRITE_HEIGHT) {
+                                       GRAPH98_MONEY_DIGIT_COUNT) ||
+        upper_y < 0 || lower_y < 0 ||
+        upper_y > GRAPH98_HEIGHT - (int)GRAPH98_MONEY_SPRITE_HEIGHT ||
+        lower_y > GRAPH98_HEIGHT - (int)GRAPH98_MONEY_SPRITE_HEIGHT) {
         return 0;
     }
 
@@ -1963,20 +1971,19 @@ graph98_draw_status_digits_file(const char *path,
     }
     fclose(fp);
 
-    graph98_draw_status_digit(time_x, time_y, hour / 10);
-    graph98_draw_status_digit(time_x + GRAPH98_MONEY_DIGIT_WIDTH,
-                              time_y, hour % 10);
-    graph98_draw_status_digit(time_x + GRAPH98_MONEY_DIGIT_WIDTH * 3,
-                              time_y, minute / 10);
-    graph98_draw_status_digit(time_x + GRAPH98_MONEY_DIGIT_WIDTH * 4,
-                              time_y, minute % 10);
+    graph98_draw_status_2digit(date_x, upper_y, month);
+    graph98_draw_status_2digit(date_x + GRAPH98_MONEY_DIGIT_WIDTH * 3,
+                               upper_y, day);
+    graph98_draw_status_2digit(time_x, upper_y, hour);
+    graph98_draw_status_2digit(time_x + GRAPH98_MONEY_DIGIT_WIDTH * 3,
+                               upper_y, minute);
 
-    money_x += GRAPH98_MONEY_DIGIT_WIDTH *
-               ((int)GRAPH98_MONEY_DIGIT_COUNT - 1);
+    time_x += GRAPH98_MONEY_DIGIT_WIDTH *
+              ((int)GRAPH98_MONEY_DIGIT_COUNT - 1);
     do {
-        graph98_draw_status_digit(money_x, money_y, money % 10);
+        graph98_draw_status_digit(time_x, lower_y, money % 10);
         money /= 10;
-        money_x -= GRAPH98_MONEY_DIGIT_WIDTH;
+        time_x -= GRAPH98_MONEY_DIGIT_WIDTH;
     } while (money != 0);
 
     return 1;

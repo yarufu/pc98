@@ -3,6 +3,15 @@
 #bgm PLAY.M
 #rightinterlace C02_N.SPR
 
+#set status_ui
+#setnum month 1
+#setnum day 5
+#setnum weekday 1
+#setnum hour 3
+#setnum minute 15
+#setnum money 5000
+
+
 [健一]
 ここ、静かだな
 
@@ -212,6 +221,9 @@
 ;
 #label classroom2
 
+#setnum hour 3
+#setnum minute 30
+
 #choice
 
 見る
@@ -266,6 +278,9 @@
 ; #label classroom シーン3
 ;
 #label classroom3
+
+#setnum hour 3
+#setnum minute 45
 
 #choice
 
@@ -363,6 +378,9 @@
 ;
 #label classroom4
 
+#setnum hour 4
+#setnum minute 00
+
 #choice
 
 見る
@@ -395,5 +413,14 @@
 
 []
 どうやら帰れそうにない
+
+[澪]
+ジュース買ってきて
+
+[]
+やってしまった．．．
+
+#add money -120
+
 
 #return

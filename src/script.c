@@ -925,6 +925,7 @@ enum GameResult run_script_sjis(const ScriptContext *ctx)
              */
 
             if (strcmp(command.cmd, "#choice") == 0) {
+                redraw_scene_if_needed(ctx, &render);
                 handle_choice_block(ctx, fp, &script_line);
                 if (*ctx->system_action != SYSTEM_ACTION_NONE) {
                     break;

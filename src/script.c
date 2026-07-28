@@ -73,6 +73,32 @@ static void trim_leading_spaces(char *str)
     str[j] = '\0';
 }
 
+static int script_is_space(char ch)
+{
+    return ch == ' ' || (ch >= '\t' && ch <= '\r');
+}
+
+static int parse_token_compat(const char **cursor, char *out, int width)
+{
+    const char *input;
+    int length;
+
+    input = *cursor;
+    while (script_is_space(*input)) {
+        ++input;
+    }
+
+    length = 0;
+    while (length < width && *input != '\0' &&
+           !script_is_space(*input)) {
+        out[length++] = *input++;
+    }
+    out[length] = '\0';
+    *cursor = input;
+
+    return length != 0;
+}
+
 static int read_script_line(const ScriptContext *ctx,
                             FILE *fp,
                             char *line,
@@ -100,6 +126,7 @@ static int find_label_and_jump(const ScriptContext *ctx,
     char line[256];
     char cmd[32];
     char arg1[64];
+    const char *cursor;
     int count;
 
     if (fp == 0 || label_name == 0 || label_name[0] == '\0') {
@@ -128,7 +155,9 @@ static int find_label_and_jump(const ScriptContext *ctx,
         cmd[0] = '\0';
         arg1[0] = '\0';
 
-        count = sscanf(line, "%31s %63s", cmd, arg1);
+        cursor = line;
+        count = parse_token_compat(&cursor, cmd, 31);
+        count += parse_token_compat(&cursor, arg1, 63);
         if (count >= 2) {
             if (strcmp(cmd, "#label") == 0 && strcmp(arg1, label_name) == 0) {
                 debug_log("SCRIPT JUMP LABEL line=%d label=%s",
@@ -290,6 +319,7 @@ process_command_line(const ScriptContext *ctx,
     char arg2[32];
     char arg3[32];
     char arg4[32];
+    const char *cursor;
     int count;
 
     cmd[0] = '\0';
@@ -298,13 +328,12 @@ process_command_line(const ScriptContext *ctx,
     arg3[0] = '\0';
     arg4[0] = '\0';
 
-    count = sscanf(line,
-                   "%31s %31s %31s %31s %31s",
-                   cmd,
-                   arg1,
-                   arg2,
-                   arg3,
-                   arg4);
+    cursor = line;
+    count = parse_token_compat(&cursor, cmd, 31);
+    count += parse_token_compat(&cursor, arg1, 31);
+    count += parse_token_compat(&cursor, arg2, 31);
+    count += parse_token_compat(&cursor, arg3, 31);
+    count += parse_token_compat(&cursor, arg4, 31);
 
     if (count <= 0) {
         return;
@@ -364,13 +393,18 @@ process_command_line(const ScriptContext *ctx,
 
 static void parse_command(const char *line, ParsedCommand *command)
 {
+    const char *cursor;
+
     command->cmd[0] = '\0';
     command->arg1[0] = '\0';
     command->arg2[0] = '\0';
     command->arg3[0] = '\0';
-    command->count = sscanf(line, "%31s %63s %63s %63s",
-                            command->cmd, command->arg1,
-                            command->arg2, command->arg3);
+
+    cursor = line;
+    command->count = parse_token_compat(&cursor, command->cmd, 31);
+    command->count += parse_token_compat(&cursor, command->arg1, 63);
+    command->count += parse_token_compat(&cursor, command->arg2, 63);
+    command->count += parse_token_compat(&cursor, command->arg3, 63);
 }
 
 static enum CommandResult handle_control_command(const ScriptContext *ctx,

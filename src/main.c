@@ -805,6 +805,39 @@ static void trim_leading_spaces(char *str)
     str[j] = '\0';
 }
 
+static int parse_two_tokens(const char *line, char *token1, char *token2)
+{
+    char *out;
+    char *token;
+    int count;
+    int width;
+
+    token2[0] = '\0';
+
+    /* sscanf の幅制限と同様、幅到達時は同じトークンの残りから続ける。 */
+    for (count = 0; count < 2; ++count) {
+        while (*line == ' ' || (*line >= '\t' && *line <= '\r')) {
+            ++line;
+        }
+
+        token = count == 0 ? token1 : token2;
+        width = count == 0 ? 31 : 63;
+        out = token;
+
+        while (width-- > 0 && *line != '\0' &&
+               *line != ' ' && (*line < '\t' || *line > '\r')) {
+            *out++ = *line++;
+        }
+        *out = '\0';
+
+        if (token[0] == '\0') {
+            break;
+        }
+    }
+
+    return count;
+}
+
 static void restore_palette_after_load(void)
 {
     FILE *fp;
@@ -829,7 +862,7 @@ static void restore_palette_after_load(void)
             cmd[0] = '\0';
             arg1[0] = '\0';
 
-            if (sscanf(line, "%31s %63s", cmd, arg1) >= 2 &&
+            if (parse_two_tokens(line, cmd, arg1) >= 2 &&
                 strcmp(cmd, "#pal") == 0) {
                 strcpy(palette_path, arg1);
             }

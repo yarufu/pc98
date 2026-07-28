@@ -2,6 +2,7 @@
 
 #include "debug.h"
 
+#include <limits.h>
 #include <stdio.h>
 #include <stdint.h>
 
@@ -302,15 +303,80 @@ static void graph98_set_palette_rgb8(uint8_t index,
     graph98_out8(GRAPH98_PORT_PALETTE_B, graph98_rgb8_to_4bit(b));
 }
 
+static int graph98_is_palette_space(int ch)
+{
+    return ch == ' ' || (ch >= '\t' && ch <= '\r');
+}
+
+static int graph98_read_palette_decimal(FILE *fp, int *next_ch, int *value)
+{
+    unsigned int magnitude;
+    unsigned int limit;
+    unsigned int digit;
+    int negative;
+    int ch;
+
+    if (fp == 0 || next_ch == 0 || value == 0) {
+        return 0;
+    }
+
+    ch = *next_ch;
+    while (graph98_is_palette_space(ch)) {
+        ch = fgetc(fp);
+    }
+
+    negative = 0;
+    if (ch == '+' || ch == '-') {
+        negative = ch == '-';
+        ch = fgetc(fp);
+    }
+
+    if (ch < '0' || ch > '9') {
+        *next_ch = ch;
+        return 0;
+    }
+
+    limit = negative ? (unsigned int)INT_MAX + 1u : (unsigned int)INT_MAX;
+    magnitude = 0u;
+
+    do {
+        digit = (unsigned int)(ch - '0');
+        if (magnitude > (limit - digit) / 10u) {
+            *next_ch = ch;
+            return 0;
+        }
+
+        magnitude = magnitude * 10u + digit;
+        ch = fgetc(fp);
+    } while (ch >= '0' && ch <= '9');
+
+    *next_ch = ch;
+
+    if (negative) {
+        if (magnitude == (unsigned int)INT_MAX + 1u) {
+            *value = INT_MIN;
+        } else {
+            *value = -(int)magnitude;
+        }
+    } else {
+        *value = (int)magnitude;
+    }
+
+    return 1;
+}
+
 int graph98_load_palette_file(const char *path)
 {
     FILE *fp;
+    int next_ch;
     int i;
 
     fp = fopen(path, "r");
     if (fp == 0) {
         return 0;
     }
+
+    next_ch = fgetc(fp);
 
     for (i = 0; i < 16; ++i) {
         int r;
@@ -322,7 +388,9 @@ int graph98_load_palette_file(const char *path)
          * 例:
          * 255 255 255
          */
-        if (fscanf(fp, "%d %d %d", &r, &g, &b) != 3) {
+        if (!graph98_read_palette_decimal(fp, &next_ch, &r) ||
+            !graph98_read_palette_decimal(fp, &next_ch, &g) ||
+            !graph98_read_palette_decimal(fp, &next_ch, &b)) {
             fclose(fp);
             return 0;
         }

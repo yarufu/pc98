@@ -938,7 +938,6 @@ static void app_cleanup(void)
     graph98_clear(0);
     text98_clear_screen();
     debug_log("ADV98 END");
-    printf("ADV98.EXE finished.\n");
 }
 
 

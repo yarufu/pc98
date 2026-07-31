@@ -6,7 +6,7 @@
 #include "pmd.h"
 #include "text98.h"
 
-#include <stdlib.h>
+#include <stdint.h>
 #include <string.h>
 
 #define STAND_LEFT_X   64
@@ -76,6 +76,40 @@ static void trim_leading_spaces(char *str)
 static int script_is_space(char ch)
 {
     return ch == ' ' || (ch >= '\t' && ch <= '\r');
+}
+
+static int __attribute__((noinline, optimize("Os")))
+parse_script_int_atoi_compat(const char *text)
+{
+    uint16_t value;
+    int negative;
+
+    if (text == 0) {
+        return 0;
+    }
+
+    while (script_is_space(*text)) {
+        ++text;
+    }
+
+    negative = 0;
+    if (*text == '+' || *text == '-') {
+        negative = (*text == '-');
+        ++text;
+    }
+
+    value = 0;
+    while (*text >= '0' && *text <= '9') {
+        value = (uint16_t)((value << 3) + (value << 1) +
+                           (uint16_t)(*text - '0'));
+        ++text;
+    }
+
+    if (negative) {
+        value = (uint16_t)(0U - value);
+    }
+
+    return (int)(int16_t)value;
 }
 
 static int parse_token_compat(const char **cursor, char *out, int width)
@@ -354,10 +388,10 @@ process_command_line(const ScriptContext *ctx,
         int y1;
 
         if (count >= 5) {
-            x0 = atoi(arg1);
-            y0 = atoi(arg2);
-            x1 = atoi(arg3);
-            y1 = atoi(arg4);
+            x0 = parse_script_int_atoi_compat(arg1);
+            y0 = parse_script_int_atoi_compat(arg2);
+            x1 = parse_script_int_atoi_compat(arg3);
+            y1 = parse_script_int_atoi_compat(arg4);
 
             ctx->set_message_box(x0, y0, x1, y1);
         }
@@ -552,7 +586,8 @@ static enum CommandResult handle_flag_command(const ScriptContext *ctx,
     }
     if (strcmp(command->cmd, "#add") == 0) {
         if (command->count >= 3) {
-            add_flag_value(ctx, command->arg1, atoi(command->arg2));
+            add_flag_value(ctx, command->arg1,
+                           parse_script_int_atoi_compat(command->arg2));
             if (is_status_number(command->arg1)) {
                 ctx->refresh_status_ui(0);
             }
@@ -561,7 +596,8 @@ static enum CommandResult handle_flag_command(const ScriptContext *ctx,
     }
     if (strcmp(command->cmd, "#setnum") == 0) {
         if (command->count >= 3) {
-            set_flag_value(ctx, command->arg1, atoi(command->arg2));
+            set_flag_value(ctx, command->arg1,
+                           parse_script_int_atoi_compat(command->arg2));
             if (is_status_number(command->arg1)) {
                 ctx->refresh_status_ui(0);
             }
@@ -570,7 +606,8 @@ static enum CommandResult handle_flag_command(const ScriptContext *ctx,
     }
     if (strcmp(command->cmd, "#ifge") == 0) {
         if (command->count >= 4 &&
-            get_flag_value(ctx, command->arg1) >= atoi(command->arg2)) {
+            get_flag_value(ctx, command->arg1) >=
+                parse_script_int_atoi_compat(command->arg2)) {
             if (find_label_and_jump(ctx, fp, script_line, command->arg3)) {
                 return COMMAND_JUMPED;
             }
@@ -579,7 +616,8 @@ static enum CommandResult handle_flag_command(const ScriptContext *ctx,
     }
     if (strcmp(command->cmd, "#ifeq") == 0) {
         if (command->count >= 4 &&
-            get_flag_value(ctx, command->arg1) == atoi(command->arg2)) {
+            get_flag_value(ctx, command->arg1) ==
+                parse_script_int_atoi_compat(command->arg2)) {
             if (find_label_and_jump(ctx, fp, script_line, command->arg3)) {
                 return COMMAND_JUMPED;
             }

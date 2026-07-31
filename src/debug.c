@@ -176,7 +176,12 @@ static void debug_write_format(FILE *fp, const char *format, va_list *args)
 
 void debug_log_init(void)
 {
-    remove("debug.txt");
+    FILE *fp;
+
+    fp = fopen("debug.txt", "w");
+    if (fp != 0) {
+        fclose(fp);
+    }
 }
 
 /*

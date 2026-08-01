@@ -45,6 +45,7 @@
 #define STATUS_PANEL_COLOR    15
 #define STATUS_SPRITE_FILE "STATUS.SPR"
 #define STATUS_FIRST_PRESENT (-1)
+#define FIXED_UI_FILE "UI.G98"
 
 static GameFlag g_flags[MAX_FLAGS];
 static GameState g_state;
@@ -57,6 +58,7 @@ static int g_request_scene_redraw = 0;
 static int g_request_script_resume = 0;
 static enum SystemAction g_system_action = SYSTEM_ACTION_NONE;
 static int g_status_ui_presented = 0;
+static int g_fixed_ui_presented = 0;
 
 /* メッセージボックス座標。初期値は従来と同じ */
 static int g_msgbox_x0 = 109;
@@ -95,6 +97,7 @@ static int g_choice_saved_lens[MAX_CHOICE_ITEMS];
 /* 関数宣言部 */
 static void ui_redraw_current_scene_from_state(void);
 static void ui_redraw_current_scene_vram_from_state(void);
+static void ui_present_fixed_ui(void);
 static void text98_hide_cursor(void);
 static void text98_clear_screen(void);
 static void ui_draw_background(const char *bg_file);
@@ -338,11 +341,16 @@ ui_draw_background_effect(const char *bg_file, int use_interlace,
 {
     int ok;
 
+    ui_present_fixed_ui();
+
     if (bg_file != 0 && bg_file[0] != '\0') {
         if (use_interlace) {
             ok = graph98_load_g98_interlace(bg_file);
         } else {
-            ok = graph98_load_g98(bg_file);
+            ok = graph98_load_g98_rect(
+                bg_file,
+                GRAPH98_SCENE_X0, GRAPH98_SCENE_Y0,
+                GRAPH98_SCENE_X1, GRAPH98_SCENE_Y1);
         }
 
         if (ok) {
@@ -351,9 +359,12 @@ ui_draw_background_effect(const char *bg_file, int use_interlace,
         debug_log(failure_format, bg_file);
     }
 
-    graph98_clear(0);
-    graph98_boxfill(20, 20, 180, 80, 4);
-    graph98_draw_string(30, 45, "BG LOAD NG", 15);
+    graph98_restore_default_pages();
+    graph98_boxfill(
+        GRAPH98_SCENE_X0, GRAPH98_SCENE_Y0,
+        GRAPH98_SCENE_X1, GRAPH98_SCENE_Y1, 0);
+    graph98_boxfill(80, 20, 240, 80, 4);
+    graph98_draw_string(90, 45, "BG LOAD NG", 15);
 }
 
 static void ui_draw_background(const char *bg_file)
@@ -370,6 +381,8 @@ static int ui_draw_current_scene_vram(const char *bg_file,
                                       const char *left_sprite,
                                       const char *right_sprite)
 {
+    ui_present_fixed_ui();
+
     if (graph98_draw_scene_file_trans_vram(
             bg_file, left_sprite, right_sprite,
             STAND_LEFT_X, STAND_RIGHT_X, STAND_Y, 0)) {
@@ -378,6 +391,19 @@ static int ui_draw_current_scene_vram(const char *bg_file,
 
     debug_log("scene draw failed: bg=%s", bg_file != 0 ? bg_file : "");
     return 0;
+}
+
+static void ui_present_fixed_ui(void)
+{
+    if (g_fixed_ui_presented) {
+        return;
+    }
+
+    g_status_ui_presented = 0;
+    if (!graph98_draw_fixed_ui_vram(FIXED_UI_FILE)) {
+        debug_log("ui load failed: UI.G98");
+    }
+    g_fixed_ui_presented = 1;
 }
 
 static void ui_refresh_stand_only(const char *bg_file,
@@ -674,12 +700,14 @@ static void ui_redraw_current_scene_from_state(void)
 static void ui_redraw_current_scene_vram_from_state(void)
 {
     graph98_restore_default_pages();
+    g_fixed_ui_presented = 0;
+    ui_present_fixed_ui();
     if (!ui_draw_current_scene_vram(
             g_state.bg_file, g_state.left_sprite, g_state.right_sprite)) {
         graph98_restore_default_pages();
         ui_redraw_current_scene_from_state();
     }
-    ui_refresh_status_ui(0);
+    ui_refresh_status_ui(STATUS_FIRST_PRESENT);
 }
 
 static void text98_clear_screen(void)
@@ -860,7 +888,6 @@ static void resume_bgm_after_load(void)
 
 static void restore_scene_after_load(void)
 {
-    g_status_ui_presented = 1;
     graph98_restore_default_pages();
     restore_palette_after_load();
     ui_redraw_current_scene_vram_from_state();
@@ -992,6 +1019,7 @@ int main(void)
 
     for (;;) {
         g_status_ui_presented = 0;
+        g_fixed_ui_presented = 0;
         g_system_action = SYSTEM_ACTION_NONE;
 
         title_context.pmd_available = g_pmd_available;
@@ -1005,6 +1033,8 @@ int main(void)
         if (!show_title_menu(&title_context)) {
             break;
         }
+
+        ui_present_fixed_ui();
 
         script_context.state = &g_state;
         script_context.flags = g_flags;

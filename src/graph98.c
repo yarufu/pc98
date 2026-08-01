@@ -32,17 +32,19 @@
 #define GRAPH98_G98_MAGIC_3 'B'
 #define GRAPH98_G98_VERSION 1u
 #define GRAPH98_G98_INTERLACE_PERIOD 2u
-#define GRAPH98_G98_INTERLACE_BOTTOM_OFFSET 1u
+#define GRAPH98_G98_INTERLACE_BOTTOM_OFFSET 2u
 #define GRAPH98_G98_INTERLACE_LINES_PER_SIDE 4u
 #define GRAPH98_G98_INTERLACE_STAGE_LINES \
     (GRAPH98_G98_INTERLACE_LINES_PER_SIDE * 2u)
+#define GRAPH98_SCENE_BYTES_PER_LINE \
+    ((GRAPH98_SCENE_X1 >> 3) - (GRAPH98_SCENE_X0 >> 3) + 1u)
 #define GRAPH98_G98_INTERLACE_PLANE_BYTES \
-    (GRAPH98_BYTES_PER_LINE * GRAPH98_G98_INTERLACE_STAGE_LINES)
+    (GRAPH98_SCENE_BYTES_PER_LINE * GRAPH98_G98_INTERLACE_STAGE_LINES)
 #define GRAPH98_G98_INTERLACE_STAGE_BYTES \
     (GRAPH98_G98_INTERLACE_PLANE_BYTES * 4u)
 #define GRAPH98_G98_INTERLACE_STAGE_COUNT \
-    (GRAPH98_HEIGHT / \
-     (GRAPH98_G98_INTERLACE_LINES_PER_SIDE * GRAPH98_G98_INTERLACE_PERIOD))
+    ((GRAPH98_SCENE_HEIGHT + GRAPH98_G98_INTERLACE_STAGE_LINES - 1u) / \
+     GRAPH98_G98_INTERLACE_STAGE_LINES)
 
 #define GRAPH98_SPRITE_MAX_WIDTH 256u
 #define GRAPH98_STATUS_SPRITE_WIDTH 160u
@@ -98,6 +100,11 @@ _Static_assert(GRAPH98_IMAGE_WORK_SIZE == 8192u,
                "image work buffer must be 8 KB");
 _Static_assert(GRAPH98_VRAM_PLANE_SIZE == 32000u,
                "full-screen VRAM plane must contain 32,000 bytes");
+_Static_assert(GRAPH98_SCENE_X1 - GRAPH98_SCENE_X0 + 1 ==
+                   GRAPH98_SCENE_WIDTH &&
+                   GRAPH98_SCENE_Y1 - GRAPH98_SCENE_Y0 + 1 ==
+                   GRAPH98_SCENE_HEIGHT,
+               "scene dimensions must match inclusive coordinates");
 _Static_assert(GRAPH98_IMAGE_WORK_SIZE >= GRAPH98_SPRITE_MAX_WIDTH,
                "sprite chunk must contain at least one line");
 _Static_assert(GRAPH98_STATUS_SPRITE_BYTES == 5120u,
@@ -123,12 +130,14 @@ _Static_assert(GRAPH98_BYTES_PER_LINE * GRAPH98_G98_CHUNK_LINES - 1u ==
                "full-screen VRAM chunk maximum work index must be 8,159");
 _Static_assert(GRAPH98_G98_INTERLACE_STAGE_LINES == 8u,
                "G98 interlace stage must contain eight lines");
-_Static_assert(GRAPH98_G98_INTERLACE_STAGE_BYTES == 2560u,
-               "G98 interlace stage must contain 2,560 bytes");
+_Static_assert(GRAPH98_SCENE_BYTES_PER_LINE == 66u,
+               "scene line must span 66 VRAM bytes");
+_Static_assert(GRAPH98_G98_INTERLACE_STAGE_BYTES == 2112u,
+               "G98 interlace stage must contain 2,112 bytes");
 _Static_assert(GRAPH98_G98_INTERLACE_STAGE_BYTES <= GRAPH98_IMAGE_WORK_SIZE,
                "G98 interlace stage exceeds image work buffer");
-_Static_assert(GRAPH98_G98_INTERLACE_STAGE_COUNT == 50u,
-               "G98 interlace must complete in 50 stages");
+_Static_assert(GRAPH98_G98_INTERLACE_STAGE_COUNT == 37u,
+               "G98 interlace must complete in 37 stages");
 _Static_assert((GRAPH98_STAND_WIDTH % 8u) == 0u,
                "stand width must be byte aligned");
 _Static_assert(GRAPH98_STAND_BYTES_PER_LINE == 32u,
@@ -1054,6 +1063,49 @@ graph98_copy_vram_plane_to_front(volatile uint8_t __far *plane)
 }
 
 int __attribute__((optimize("Os")))
+graph98_draw_fixed_ui_vram(const char *path)
+{
+    int ok;
+
+    ok = 0;
+    graph98_out8(GRAPH98_PORT_DISPLAY_PAGE, GRAPH98_PAGE_FRONT);
+
+    if (path == 0 || path[0] == '\0') {
+        goto clear_pages;
+    }
+
+    graph98_out8(GRAPH98_PORT_ACCESS_PAGE, GRAPH98_PAGE_BACK);
+    if (!graph98_load_g98(path)) {
+        goto clear_pages;
+    }
+
+    /* Page 1 is complete before it becomes visible. */
+    graph98_wait_vsync();
+    graph98_out8(GRAPH98_PORT_DISPLAY_PAGE, GRAPH98_PAGE_BACK);
+
+    graph98_copy_vram_plane_to_front(GRAPH98_VRAM_BLUE);
+    graph98_copy_vram_plane_to_front(GRAPH98_VRAM_RED);
+    graph98_copy_vram_plane_to_front(GRAPH98_VRAM_GREEN);
+    graph98_copy_vram_plane_to_front(GRAPH98_VRAM_INTENS);
+
+    graph98_wait_vsync();
+    graph98_out8(GRAPH98_PORT_DISPLAY_PAGE, GRAPH98_PAGE_FRONT);
+    ok = 1;
+    goto cleanup;
+
+clear_pages:
+    /* Do not leave the title or a partially loaded UI on either page. */
+    graph98_out8(GRAPH98_PORT_ACCESS_PAGE, GRAPH98_PAGE_FRONT);
+    graph98_clear_vram();
+    graph98_out8(GRAPH98_PORT_ACCESS_PAGE, GRAPH98_PAGE_BACK);
+    graph98_clear_vram();
+
+cleanup:
+    graph98_restore_default_pages();
+    return ok;
+}
+
+int __attribute__((optimize("Os")))
 graph98_draw_scene_file_trans_vram(
     const char *background_path,
     const char *left_sprite_path,
@@ -1074,7 +1126,10 @@ graph98_draw_scene_file_trans_vram(
     }
 
     graph98_out8(GRAPH98_PORT_ACCESS_PAGE, GRAPH98_PAGE_BACK);
-    if (!graph98_load_g98(background_path)) {
+    if (!graph98_load_g98_rect(
+            background_path,
+            GRAPH98_SCENE_X0, GRAPH98_SCENE_Y0,
+            GRAPH98_SCENE_X1, GRAPH98_SCENE_Y1)) {
         goto cleanup;
     }
     if (left_sprite_path != 0 && left_sprite_path[0] != '\0' &&
@@ -1088,17 +1143,12 @@ graph98_draw_scene_file_trans_vram(
         goto cleanup;
     }
 
-    /* No file I/O or transparency work occurs after this first VSYNC. */
-    graph98_wait_vsync();
-    graph98_out8(GRAPH98_PORT_DISPLAY_PAGE, GRAPH98_PAGE_BACK);
-
-    graph98_copy_vram_plane_to_front(GRAPH98_VRAM_BLUE);
-    graph98_copy_vram_plane_to_front(GRAPH98_VRAM_RED);
-    graph98_copy_vram_plane_to_front(GRAPH98_VRAM_GREEN);
-    graph98_copy_vram_plane_to_front(GRAPH98_VRAM_INTENS);
-
-    graph98_wait_vsync();
-    graph98_out8(GRAPH98_PORT_DISPLAY_PAGE, GRAPH98_PAGE_FRONT);
+    /* Keep page 0 displayed and present only the completed game rectangle. */
+    if (!graph98_present_rect_back_vram(
+            GRAPH98_SCENE_X0, GRAPH98_SCENE_Y0,
+            GRAPH98_SCENE_X1, GRAPH98_SCENE_Y1)) {
+        goto cleanup;
+    }
     ok = 1;
 
 cleanup:
@@ -1438,77 +1488,98 @@ int graph98_load_g98_rect(const char *path, int x0, int y0, int x1, int y1)
 }
 
 static void __attribute__((noinline, optimize("Os")))
-graph98_read_interlace_stage_plane(volatile uint8_t __far *plane,
-                                   uint16_t top_y,
-                                   uint16_t bottom_y,
-                                   uint16_t work_start)
+graph98_transfer_g98_interlace_line_plane(
+    volatile uint8_t __far *plane,
+    const struct graph98_rect_layout *layout,
+    uint16_t relative_y,
+    uint16_t work_offset,
+    int write_to_vram)
 {
-    uint16_t line_index;
+    uint16_t vram_offset;
+    uint16_t i;
 
-    for (line_index = 0;
-         line_index < GRAPH98_G98_INTERLACE_LINES_PER_SIDE;
-         ++line_index) {
-        uint16_t top_offset;
-        uint16_t bottom_offset;
-        uint16_t top_work;
-        uint16_t bottom_work;
-        uint16_t i;
+    vram_offset = (uint16_t)(
+        (GRAPH98_SCENE_Y0 + relative_y) * GRAPH98_BYTES_PER_LINE +
+        layout->byte_x);
 
-        top_offset = (uint16_t)(
-            (top_y + line_index * GRAPH98_G98_INTERLACE_PERIOD) *
-            GRAPH98_BYTES_PER_LINE);
-        bottom_offset = (uint16_t)(
-            (bottom_y - line_index * GRAPH98_G98_INTERLACE_PERIOD) *
-            GRAPH98_BYTES_PER_LINE);
-        top_work = (uint16_t)(work_start +
-                              line_index * GRAPH98_BYTES_PER_LINE);
-        bottom_work = (uint16_t)(work_start +
-                                 (GRAPH98_G98_INTERLACE_LINES_PER_SIDE +
-                                  line_index) * GRAPH98_BYTES_PER_LINE);
-
-        for (i = 0; i < GRAPH98_BYTES_PER_LINE; ++i) {
-            graph98_image_work[(uint16_t)(top_work + i)] =
-                plane[(uint16_t)(top_offset + i)];
-            graph98_image_work[(uint16_t)(bottom_work + i)] =
-                plane[(uint16_t)(bottom_offset + i)];
+    if (write_to_vram) {
+        graph98_write_masked_rect_row(
+            plane, vram_offset, work_offset, layout);
+    } else {
+        for (i = 0; i < layout->bytes_per_row; ++i) {
+            graph98_image_work[(uint16_t)(work_offset + i)] =
+                plane[(uint16_t)(vram_offset + i)];
         }
     }
 }
 
 static void __attribute__((noinline, optimize("Os")))
-graph98_write_interlace_stage_plane(volatile uint8_t __far *plane,
-                                    uint16_t top_y,
-                                    uint16_t bottom_y,
-                                    uint16_t work_start)
+graph98_transfer_g98_interlace_stage(
+    const struct graph98_rect_layout *layout,
+    uint16_t stage,
+    int write_to_vram)
 {
-    uint16_t line_index;
+    uint16_t plane_number;
+    int stage_offset;
 
-    for (line_index = 0;
-         line_index < GRAPH98_G98_INTERLACE_LINES_PER_SIDE;
-         ++line_index) {
-        uint16_t top_offset;
-        uint16_t bottom_offset;
-        uint16_t top_work;
-        uint16_t bottom_work;
-        uint16_t i;
+    stage_offset = (int)(stage * GRAPH98_G98_INTERLACE_STAGE_LINES);
 
-        top_offset = (uint16_t)(
-            (top_y + line_index * GRAPH98_G98_INTERLACE_PERIOD) *
-            GRAPH98_BYTES_PER_LINE);
-        bottom_offset = (uint16_t)(
-            (bottom_y - line_index * GRAPH98_G98_INTERLACE_PERIOD) *
-            GRAPH98_BYTES_PER_LINE);
-        top_work = (uint16_t)(work_start +
-                              line_index * GRAPH98_BYTES_PER_LINE);
-        bottom_work = (uint16_t)(work_start +
-                                 (GRAPH98_G98_INTERLACE_LINES_PER_SIDE +
-                                  line_index) * GRAPH98_BYTES_PER_LINE);
+    for (plane_number = 0;
+         plane_number < GRAPH98_RECT_TRANSFER_PLANES;
+         ++plane_number) {
+        volatile uint8_t __far *plane;
+        uint16_t line_index;
+        uint16_t work_line;
+        uint16_t work_start;
+        int relative_y;
 
-        for (i = 0; i < GRAPH98_BYTES_PER_LINE; ++i) {
-            plane[(uint16_t)(top_offset + i)] =
-                graph98_image_work[(uint16_t)(top_work + i)];
-            plane[(uint16_t)(bottom_offset + i)] =
-                graph98_image_work[(uint16_t)(bottom_work + i)];
+        if (plane_number == 0u) {
+            plane = GRAPH98_VRAM_BLUE;
+        } else if (plane_number == 1u) {
+            plane = GRAPH98_VRAM_RED;
+        } else if (plane_number == 2u) {
+            plane = GRAPH98_VRAM_GREEN;
+        } else {
+            plane = GRAPH98_VRAM_INTENS;
+        }
+
+        work_start = (uint16_t)(
+            plane_number * GRAPH98_G98_INTERLACE_PLANE_BYTES);
+        work_line = 0;
+
+        for (line_index = 0;
+             line_index < GRAPH98_G98_INTERLACE_LINES_PER_SIDE;
+             ++line_index) {
+            relative_y = stage_offset +
+                (int)(line_index * GRAPH98_G98_INTERLACE_PERIOD);
+            if (relative_y >= GRAPH98_SCENE_HEIGHT) {
+                break;
+            }
+
+            graph98_transfer_g98_interlace_line_plane(
+                plane, layout, (uint16_t)relative_y,
+                (uint16_t)(work_start +
+                    work_line * layout->bytes_per_row),
+                write_to_vram);
+            ++work_line;
+        }
+
+        for (line_index = 0;
+             line_index < GRAPH98_G98_INTERLACE_LINES_PER_SIDE;
+             ++line_index) {
+            relative_y = GRAPH98_SCENE_HEIGHT -
+                (int)GRAPH98_G98_INTERLACE_BOTTOM_OFFSET - stage_offset -
+                (int)(line_index * GRAPH98_G98_INTERLACE_PERIOD);
+            if (relative_y < 0) {
+                break;
+            }
+
+            graph98_transfer_g98_interlace_line_plane(
+                plane, layout, (uint16_t)relative_y,
+                (uint16_t)(work_start +
+                    work_line * layout->bytes_per_row),
+                write_to_vram);
+            ++work_line;
         }
     }
 }
@@ -1516,6 +1587,7 @@ graph98_write_interlace_stage_plane(volatile uint8_t __far *plane,
 int __attribute__((optimize("Os")))
 graph98_load_g98_interlace(const char *path)
 {
+    struct graph98_rect_layout layout;
     uint16_t stage;
     int ok;
 
@@ -1529,54 +1601,25 @@ graph98_load_g98_interlace(const char *path)
     graph98_out8(GRAPH98_PORT_DISPLAY_PAGE, GRAPH98_PAGE_FRONT);
     graph98_out8(GRAPH98_PORT_ACCESS_PAGE, GRAPH98_PAGE_BACK);
 
-    /* All file I/O finishes while the complete background is built here. */
-    if (!graph98_load_g98(path)) {
+    /* All file I/O finishes while the game rectangle is built here. */
+    if (!graph98_load_g98_rect(
+            path,
+            GRAPH98_SCENE_X0, GRAPH98_SCENE_Y0,
+            GRAPH98_SCENE_X1, GRAPH98_SCENE_Y1)) {
         goto cleanup;
     }
 
+    graph98_make_rect_layout(
+        GRAPH98_SCENE_X0, GRAPH98_SCENE_X1, &layout);
     graph98_out8(GRAPH98_PORT_ACCESS_PAGE, GRAPH98_PAGE_FRONT);
 
     for (stage = 0; stage < GRAPH98_G98_INTERLACE_STAGE_COUNT; ++stage) {
-        uint16_t top_y;
-        uint16_t bottom_y;
-
-        top_y = (uint16_t)(
-            stage * GRAPH98_G98_INTERLACE_LINES_PER_SIDE *
-            GRAPH98_G98_INTERLACE_PERIOD);
-        bottom_y = (uint16_t)(
-            (GRAPH98_HEIGHT - GRAPH98_G98_INTERLACE_BOTTOM_OFFSET) -
-            stage * GRAPH98_G98_INTERLACE_LINES_PER_SIDE *
-            GRAPH98_G98_INTERLACE_PERIOD);
-
         graph98_out8(GRAPH98_PORT_ACCESS_PAGE, GRAPH98_PAGE_BACK);
-        graph98_read_interlace_stage_plane(
-            GRAPH98_VRAM_BLUE, top_y, bottom_y,
-            GRAPH98_G98_INTERLACE_PLANE_BYTES * 0u);
-        graph98_read_interlace_stage_plane(
-            GRAPH98_VRAM_RED, top_y, bottom_y,
-            GRAPH98_G98_INTERLACE_PLANE_BYTES * 1u);
-        graph98_read_interlace_stage_plane(
-            GRAPH98_VRAM_GREEN, top_y, bottom_y,
-            GRAPH98_G98_INTERLACE_PLANE_BYTES * 2u);
-        graph98_read_interlace_stage_plane(
-            GRAPH98_VRAM_INTENS, top_y, bottom_y,
-            GRAPH98_G98_INTERLACE_PLANE_BYTES * 3u);
+        graph98_transfer_g98_interlace_stage(&layout, stage, 0);
 
         graph98_out8(GRAPH98_PORT_ACCESS_PAGE, GRAPH98_PAGE_FRONT);
         graph98_wait_vsync();
-
-        graph98_write_interlace_stage_plane(
-            GRAPH98_VRAM_BLUE, top_y, bottom_y,
-            GRAPH98_G98_INTERLACE_PLANE_BYTES * 0u);
-        graph98_write_interlace_stage_plane(
-            GRAPH98_VRAM_RED, top_y, bottom_y,
-            GRAPH98_G98_INTERLACE_PLANE_BYTES * 1u);
-        graph98_write_interlace_stage_plane(
-            GRAPH98_VRAM_GREEN, top_y, bottom_y,
-            GRAPH98_G98_INTERLACE_PLANE_BYTES * 2u);
-        graph98_write_interlace_stage_plane(
-            GRAPH98_VRAM_INTENS, top_y, bottom_y,
-            GRAPH98_G98_INTERLACE_PLANE_BYTES * 3u);
+        graph98_transfer_g98_interlace_stage(&layout, stage, 1);
     }
 
     ok = 1;

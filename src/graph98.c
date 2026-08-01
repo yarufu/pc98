@@ -1063,7 +1063,7 @@ graph98_copy_vram_plane_to_front(volatile uint8_t __far *plane)
 }
 
 int __attribute__((optimize("Os")))
-graph98_draw_fixed_ui_vram(const char *path)
+graph98_draw_ui_vram(const char *path, int clear_on_failure)
 {
     int ok;
 
@@ -1094,6 +1094,10 @@ graph98_draw_fixed_ui_vram(const char *path)
     goto cleanup;
 
 clear_pages:
+    if (!clear_on_failure) {
+        goto cleanup;
+    }
+
     /* Do not leave the title or a partially loaded UI on either page. */
     graph98_out8(GRAPH98_PORT_ACCESS_PAGE, GRAPH98_PAGE_FRONT);
     graph98_clear_vram();

@@ -45,7 +45,6 @@
 #define STATUS_PANEL_COLOR    15
 #define STATUS_SPRITE_FILE "STATUS.SPR"
 #define STATUS_FIRST_PRESENT (-1)
-#define FIXED_UI_FILE "UI.G98"
 
 static GameFlag g_flags[MAX_FLAGS];
 static GameState g_state;
@@ -97,7 +96,8 @@ static int g_choice_saved_lens[MAX_CHOICE_ITEMS];
 /* 関数宣言部 */
 static void ui_redraw_current_scene_from_state(void);
 static void ui_redraw_current_scene_vram_from_state(void);
-static void ui_present_fixed_ui(void);
+static void ui_present_current_ui(void);
+static int ui_change_theme(const char *ui_file);
 static void text98_hide_cursor(void);
 static void text98_clear_screen(void);
 static void ui_draw_background(const char *bg_file);
@@ -341,7 +341,7 @@ ui_draw_background_effect(const char *bg_file, int use_interlace,
 {
     int ok;
 
-    ui_present_fixed_ui();
+    ui_present_current_ui();
 
     if (bg_file != 0 && bg_file[0] != '\0') {
         if (use_interlace) {
@@ -381,7 +381,7 @@ static int ui_draw_current_scene_vram(const char *bg_file,
                                       const char *left_sprite,
                                       const char *right_sprite)
 {
-    ui_present_fixed_ui();
+    ui_present_current_ui();
 
     if (graph98_draw_scene_file_trans_vram(
             bg_file, left_sprite, right_sprite,
@@ -393,17 +393,49 @@ static int ui_draw_current_scene_vram(const char *bg_file,
     return 0;
 }
 
-static void ui_present_fixed_ui(void)
+static void ui_present_current_ui(void)
 {
+    const char *ui_file;
+
     if (g_fixed_ui_presented) {
         return;
     }
 
+    if (g_state.ui_file[0] == '\0') {
+        strcpy(g_state.ui_file, DEFAULT_UI_FILE);
+    }
+    ui_file = g_state.ui_file;
     g_status_ui_presented = 0;
-    if (!graph98_draw_fixed_ui_vram(FIXED_UI_FILE)) {
-        debug_log("ui load failed: UI.G98");
+    if (!graph98_draw_ui_vram(
+            ui_file, strcmp(ui_file, DEFAULT_UI_FILE) == 0)) {
+        debug_log("ui load failed: %s", ui_file);
+        if (strcmp(ui_file, DEFAULT_UI_FILE) != 0) {
+            if (graph98_draw_ui_vram(DEFAULT_UI_FILE, 1)) {
+                strcpy(g_state.ui_file, DEFAULT_UI_FILE);
+            } else {
+                debug_log("ui load failed: UI.G98");
+            }
+        }
     }
     g_fixed_ui_presented = 1;
+}
+
+static int ui_change_theme(const char *ui_file)
+{
+    if (!graph98_draw_ui_vram(ui_file, 0)) {
+        return 0;
+    }
+
+    g_fixed_ui_presented = 1;
+    g_status_ui_presented = 0;
+    if (g_state.bg_file[0] != '\0' &&
+        !ui_draw_current_scene_vram(
+            g_state.bg_file, g_state.left_sprite, g_state.right_sprite)) {
+        graph98_restore_default_pages();
+        ui_redraw_current_scene_from_state();
+    }
+    ui_refresh_status_ui(STATUS_FIRST_PRESENT);
+    return 1;
 }
 
 static void ui_refresh_stand_only(const char *bg_file,
@@ -701,7 +733,7 @@ static void ui_redraw_current_scene_vram_from_state(void)
 {
     graph98_restore_default_pages();
     g_fixed_ui_presented = 0;
-    ui_present_fixed_ui();
+    ui_present_current_ui();
     if (!ui_draw_current_scene_vram(
             g_state.bg_file, g_state.left_sprite, g_state.right_sprite)) {
         graph98_restore_default_pages();
@@ -1034,8 +1066,6 @@ int main(void)
             break;
         }
 
-        ui_present_fixed_ui();
-
         script_context.state = &g_state;
         script_context.flags = g_flags;
         script_context.pmd_available = g_pmd_available;
@@ -1044,6 +1074,7 @@ int main(void)
         script_context.request_script_resume = &g_request_script_resume;
         script_context.system_action = &g_system_action;
         script_context.set_message_box = ui_set_message_box;
+        script_context.change_ui = ui_change_theme;
         script_context.draw_background = ui_draw_background;
         script_context.draw_background_interlace = ui_draw_background_interlace;
         script_context.draw_scene_vram = ui_draw_current_scene_vram;

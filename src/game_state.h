@@ -6,6 +6,8 @@
 #define SAVE_SLOT_COUNT 3
 #define BG_FILENAME_SIZE 13
 #define SPRITE_FILENAME_SIZE 13
+#define UI_FILENAME_SIZE 13
+#define DEFAULT_UI_FILE "UI.G98"
 
 typedef struct {
     char name[32];
@@ -22,6 +24,7 @@ typedef struct {
     char right_sprite[SPRITE_FILENAME_SIZE];
 
     char bgm[64];
+    char ui_file[UI_FILENAME_SIZE];
 } GameState;
 
 #endif

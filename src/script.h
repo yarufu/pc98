@@ -28,6 +28,7 @@ typedef struct {
     enum SystemAction *system_action;
 
     void (*set_message_box)(int x0, int y0, int x1, int y1);
+    int (*change_ui)(const char *ui_file);
     void (*draw_background)(const char *bg_file);
     void (*draw_background_interlace)(const char *bg_file);
     int (*draw_scene_vram)(const char *bg_file,

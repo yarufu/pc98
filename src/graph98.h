@@ -27,7 +27,7 @@ void graph98_rect(int x0, int y0, int x1, int y1, unsigned char color);
 void graph98_boxfill(int x0, int y0, int x1, int y1, unsigned char color);
 void graph98_clear(unsigned char color);
 int graph98_load_g98(const char *path);
-int graph98_draw_fixed_ui_vram(const char *path);
+int graph98_draw_ui_vram(const char *path, int clear_on_failure);
 int graph98_load_g98_interlace(const char *path);
 int graph98_draw_scene_file_trans_vram(
     const char *background_path,

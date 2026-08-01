@@ -727,7 +727,8 @@ handle_display_command(const ScriptContext *ctx,
     GameState *state;
     int background_command;
 
-    if (strcmp(command->cmd, "#bg") != 0 &&
+    if (strcmp(command->cmd, "#ui") != 0 &&
+        strcmp(command->cmd, "#bg") != 0 &&
         strcmp(command->cmd, "#bginterlace") != 0 &&
         strcmp(command->cmd, "#left") != 0 &&
         strcmp(command->cmd, "#leftinterlace") != 0 &&
@@ -735,6 +736,23 @@ handle_display_command(const ScriptContext *ctx,
         strcmp(command->cmd, "#rightinterlace") != 0 &&
         strcmp(command->cmd, "#msgbox") != 0) {
         return COMMAND_NOT_HANDLED;
+    }
+
+    if (strcmp(command->cmd, "#ui") == 0) {
+        if (command->count != 2 ||
+            strcmp(command->arg1, "none") == 0 ||
+            strlen(command->arg1) >= UI_FILENAME_SIZE) {
+            debug_log("ui command invalid: %s",
+                      command->count >= 2 ? command->arg1 : "");
+            return COMMAND_HANDLED;
+        }
+
+        if (!ctx->change_ui(command->arg1)) {
+            debug_log("ui change failed: %s", command->arg1);
+            return COMMAND_HANDLED;
+        }
+        strcpy(ctx->state->ui_file, command->arg1);
+        return COMMAND_HANDLED;
     }
 
     if ((strcmp(command->cmd, "#left") == 0 ||
@@ -917,6 +935,7 @@ enum GameResult run_script_sjis(const ScriptContext *ctx)
         ctx->request_scene_redraw == 0 ||
         ctx->request_script_resume == 0 ||
         ctx->system_action == 0 ||
+        ctx->change_ui == 0 ||
         ctx->draw_background_interlace == 0 ||
         ctx->draw_scene_vram == 0 ||
         ctx->refresh_left_stand_only_interlace == 0 ||
@@ -939,6 +958,7 @@ enum GameResult run_script_sjis(const ScriptContext *ctx)
     if (!*ctx->request_script_resume) {
         memset(ctx->flags, 0, sizeof(GameFlag) * MAX_FLAGS);
         memset(state, 0, sizeof(*state));
+        strcpy(state->ui_file, DEFAULT_UI_FILE);
     }
 
     render.last_bg_file[0] = '\0';
@@ -991,7 +1011,7 @@ enum GameResult run_script_sjis(const ScriptContext *ctx)
              *   control:  #label, #jump, #call, #return
              *   flags:    #setnum, #ifeq
              *   external: #pal, #bgm
-             *   display:  #bg, #bginterlace, #left, #leftinterlace,
+             *   display:  #ui, #bg, #bginterlace, #left, #leftinterlace,
              *             #right, #rightinterlace
              * Other supported commands are routed through the same groups.
              */

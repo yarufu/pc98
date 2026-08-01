@@ -6,7 +6,6 @@
 typedef struct {
     int *mouse_available;
 
-    void (*hide_message_window_until_resume)(void);
     void (*draw_choice_jis)(int choice_count, int selected);
     int (*open_system_menu)(void);
     int (*open_system_menu_from_choice)(int choice_count, int selected,

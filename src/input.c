@@ -117,11 +117,6 @@ int input_wait_key(void)
             return g_input.open_system_menu();
         }
 
-        if (ch == 'H' || ch == 'h') {
-            g_input.hide_message_window_until_resume();
-            return 0;
-        }
-
         if (ch == 0x0D) {
             return 1;  /* Enter */
         }

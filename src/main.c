@@ -21,8 +21,6 @@
 #define STAND_LEFT_X   64
 #define STAND_RIGHT_X  320
 #define STAND_Y        9
-#define STAND_RIGHT_EDGE 575
-#define STAND_BOTTOM_Y   298
 
 #define MAX_CHOICE_ITEMS 6
 #define MAX_CHOICE_CHARS 64
@@ -97,7 +95,6 @@ static int g_choice_saved_lens[MAX_CHOICE_ITEMS];
 /* 関数宣言部 */
 static void ui_redraw_current_scene_from_state(void);
 static void ui_redraw_current_scene_vram_from_state(void);
-static void ui_hide_message_window_until_resume(void);
 static void text98_hide_cursor(void);
 static void text98_clear_screen(void);
 static void ui_draw_background(const char *bg_file);
@@ -685,50 +682,6 @@ static void ui_redraw_current_scene_vram_from_state(void)
     ui_refresh_status_ui(0);
 }
 
-/* メッセージ非表示中の待機関数 */
-static void ui_hide_message_window_until_resume(void)
-{
-    uint8_t ch;
-
-    graph98_restore_default_pages();
-
-    if (g_msgbox_x0 <= STAND_RIGHT_EDGE &&
-        g_msgbox_x1 >= STAND_LEFT_X &&
-        g_msgbox_y0 <= STAND_BOTTOM_Y &&
-        g_msgbox_y1 >= STAND_Y) {
-        ui_redraw_current_scene_from_state();
-    } else if (g_state.bg_file[0] == '\0' ||
-               !graph98_load_g98_rect(g_state.bg_file,
-                                      g_msgbox_x0, g_msgbox_y0,
-                                      g_msgbox_x1, g_msgbox_y1) ||
-               !graph98_load_g98_rect(g_state.bg_file,
-                                      STATUS_LEFT_X, STATUS_TIME_Y,
-                                      STATUS_LEFT_X1, STATUS_MONEY_Y1) ||
-               !graph98_load_g98_rect(g_state.bg_file,
-                                      STATUS_X, STATUS_TIME_Y,
-                                      STATUS_X1, STATUS_MONEY_Y1)) {
-        debug_log("H hide rect restore failed: %s", g_state.bg_file);
-        ui_redraw_current_scene_from_state();
-    }
-
-    for (;;) {
-        if (g_mouse_available && mouse98_left_pressed()) {
-            mouse98_wait_left_release();
-            break;
-        }
-
-        if (!input_key_available()) {
-            continue;
-        }
-
-        ch = input_read_key(0);
-        if (ch == 0x0D) {
-            break;
-        }
-    }
-}
-
-
 static void text98_clear_screen(void)
 {
     __asm__ __volatile__(
@@ -1032,8 +985,6 @@ int main(void)
     menu_init(&menu_context);
 
     input_context.mouse_available = &g_mouse_available;
-    input_context.hide_message_window_until_resume =
-        ui_hide_message_window_until_resume;
     input_context.draw_choice_jis = ui_draw_choice_jis;
     input_context.open_system_menu = open_system_menu;
     input_context.open_system_menu_from_choice = open_system_menu_from_choice;

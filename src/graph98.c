@@ -16,6 +16,14 @@
 
 #define GRAPH98_PORT_COLOR_MODE 0x006A
 
+#define GRAPH98_BIOS_CRT_STATUS \
+    (*(volatile const uint8_t __far *)0x0000054CUL)
+#define GRAPH98_BIOS_GRCG_PRESENT 0x02u
+#define GRAPH98_PORT_GRCG_MODE 0x007Cu
+#define GRAPH98_PORT_GRCG_TILE 0x007Eu
+#define GRAPH98_GRCG_DISABLE 0x00u
+#define GRAPH98_GRCG_TDW_ALL_PLANES 0x80u
+
 #define GRAPH98_PORT_DISPLAY_PAGE 0x00A4
 #define GRAPH98_PORT_ACCESS_PAGE  0x00A6
 #define GRAPH98_PAGE_FRONT 0x00u
@@ -768,6 +776,68 @@ static void graph98_fill_byte_rect(int byte_x0, int byte_x1,
     }
 }
 
+int graph98_grcg_available(void)
+{
+    return (GRAPH98_BIOS_CRT_STATUS & GRAPH98_BIOS_GRCG_PRESENT) != 0u;
+}
+
+int graph98_boxfill_grcg_aligned8(int x0, int y0, int x1, int y1,
+                                  unsigned char color)
+{
+    int byte_x0;
+    int byte_x1;
+    int y;
+    uint8_t blue_value;
+    uint8_t red_value;
+    uint8_t green_value;
+    uint8_t intens_value;
+
+    /* Detection and all validation finish before the GRCG is enabled. */
+    if (!graph98_grcg_available() ||
+        x0 < 0 || x1 >= GRAPH98_WIDTH || x0 > x1 ||
+        y0 < 0 || y1 >= GRAPH98_HEIGHT || y0 > y1 ||
+        (x0 & 7) != 0 || (x1 & 7) != 7) {
+        return 0;
+    }
+
+    color &= 0x0Fu;
+    blue_value = (color & 0x01u) ? 0xFFu : 0x00u;
+    red_value = (color & 0x02u) ? 0xFFu : 0x00u;
+    green_value = (color & 0x04u) ? 0xFFu : 0x00u;
+    intens_value = (color & 0x08u) ? 0xFFu : 0x00u;
+    byte_x0 = x0 >> 3;
+    byte_x1 = x1 >> 3;
+
+    graph98_out8(GRAPH98_PORT_GRCG_MODE, GRAPH98_GRCG_TDW_ALL_PLANES);
+    graph98_out8(GRAPH98_PORT_GRCG_TILE, blue_value);
+    graph98_out8(GRAPH98_PORT_GRCG_TILE, red_value);
+    graph98_out8(GRAPH98_PORT_GRCG_TILE, green_value);
+    graph98_out8(GRAPH98_PORT_GRCG_TILE, intens_value);
+
+    /* TDW ignores the CPU data and writes the four tile values instead. */
+    for (y = y0; y <= y1; ++y) {
+        uint16_t offset;
+        int bx;
+
+        offset = (uint16_t)(y * GRAPH98_BYTES_PER_LINE + byte_x0);
+        for (bx = byte_x0; bx <= byte_x1; ++bx) {
+            GRAPH98_VRAM_BLUE[(uint16_t)(offset + bx - byte_x0)] = 0x00u;
+        }
+    }
+
+    /* There is no return between enabling the GRCG and this disable write. */
+    graph98_out8(GRAPH98_PORT_GRCG_MODE, GRAPH98_GRCG_DISABLE);
+    return 1;
+}
+
+void graph98_boxfill_grcg_or_cpu(int x0, int y0, int x1, int y1,
+                                 unsigned char color)
+{
+    if (!graph98_boxfill_grcg_aligned8(x0, y0, x1, y1, color)) {
+        graph98_boxfill(x0, y0, x1, y1, color);
+    }
+}
+
 void graph98_boxfill(int x0, int y0, int x1, int y1, unsigned char color)
 {
     int tmp;
@@ -874,7 +944,8 @@ void graph98_boxfill(int x0, int y0, int x1, int y1, unsigned char color)
 
 void graph98_clear(unsigned char color)
 {
-    graph98_boxfill(0, 0, GRAPH98_WIDTH - 1, GRAPH98_HEIGHT - 1, color);
+    graph98_boxfill_grcg_or_cpu(
+        0, 0, GRAPH98_WIDTH - 1, GRAPH98_HEIGHT - 1, color);
 }
 
 static int graph98_read_g98_header(FILE *fp, struct graph98_g98_header *header)

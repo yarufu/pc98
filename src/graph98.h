@@ -25,6 +25,13 @@ void graph98_hline(int x0, int x1, int y, unsigned char color);
 void graph98_vline(int x, int y0, int y1, unsigned char color);
 void graph98_rect(int x0, int y0, int x1, int y1, unsigned char color);
 void graph98_boxfill(int x0, int y0, int x1, int y1, unsigned char color);
+/* Experimental GRCG TDW path; it does not clip or change VRAM pages. */
+int graph98_grcg_available(void);
+int graph98_boxfill_grcg_aligned8(int x0, int y0, int x1, int y1,
+                                  unsigned char color);
+/* Uses the conventional graph98_boxfill() whenever TDW cannot be used. */
+void graph98_boxfill_grcg_or_cpu(int x0, int y0, int x1, int y1,
+                                 unsigned char color);
 void graph98_clear(unsigned char color);
 int graph98_load_g98(const char *path);
 int graph98_draw_ui_vram(const char *path, int clear_on_failure);

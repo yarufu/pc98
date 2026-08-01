@@ -8,7 +8,13 @@ extern "C" {
 enum {
     GRAPH98_WIDTH = 640,
     GRAPH98_HEIGHT = 400,
-    GRAPH98_COLORS = 16
+    GRAPH98_COLORS = 16,
+    GRAPH98_SCENE_X0 = 60,
+    GRAPH98_SCENE_Y0 = 4,
+    GRAPH98_SCENE_X1 = 579,
+    GRAPH98_SCENE_Y1 = 298,
+    GRAPH98_SCENE_WIDTH = 520,
+    GRAPH98_SCENE_HEIGHT = 295
 };
 
 void graph98_init(void);
@@ -21,6 +27,7 @@ void graph98_rect(int x0, int y0, int x1, int y1, unsigned char color);
 void graph98_boxfill(int x0, int y0, int x1, int y1, unsigned char color);
 void graph98_clear(unsigned char color);
 int graph98_load_g98(const char *path);
+int graph98_draw_fixed_ui_vram(const char *path);
 int graph98_load_g98_interlace(const char *path);
 int graph98_draw_scene_file_trans_vram(
     const char *background_path,

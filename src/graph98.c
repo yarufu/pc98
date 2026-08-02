@@ -113,6 +113,15 @@ _Static_assert(GRAPH98_SCENE_X1 - GRAPH98_SCENE_X0 + 1 ==
                    GRAPH98_SCENE_Y1 - GRAPH98_SCENE_Y0 + 1 ==
                    GRAPH98_SCENE_HEIGHT,
                "scene dimensions must match inclusive coordinates");
+_Static_assert(GRAPH98_SCENE_X0 == 60 && GRAPH98_SCENE_X1 == 579 &&
+                   GRAPH98_SCENE_Y0 == 0 && GRAPH98_SCENE_Y1 == 298,
+               "scene must preserve side and bottom UI regions");
+_Static_assert(GRAPH98_SCENE_Y0 * GRAPH98_BYTES_PER_LINE +
+                   (GRAPH98_SCENE_X0 >> 3) == 7u &&
+                   GRAPH98_SCENE_Y1 * GRAPH98_BYTES_PER_LINE +
+                   (GRAPH98_SCENE_X1 >> 3) == 23912u &&
+                   23912u < GRAPH98_VRAM_PLANE_SIZE,
+               "scene VRAM offsets must stay within one plane");
 _Static_assert(GRAPH98_IMAGE_WORK_SIZE >= GRAPH98_SPRITE_MAX_WIDTH,
                "sprite chunk must contain at least one line");
 _Static_assert(GRAPH98_STATUS_SPRITE_BYTES == 5120u,
@@ -144,8 +153,8 @@ _Static_assert(GRAPH98_G98_INTERLACE_STAGE_BYTES == 2112u,
                "G98 interlace stage must contain 2,112 bytes");
 _Static_assert(GRAPH98_G98_INTERLACE_STAGE_BYTES <= GRAPH98_IMAGE_WORK_SIZE,
                "G98 interlace stage exceeds image work buffer");
-_Static_assert(GRAPH98_G98_INTERLACE_STAGE_COUNT == 37u,
-               "G98 interlace must complete in 37 stages");
+_Static_assert(GRAPH98_G98_INTERLACE_STAGE_COUNT == 38u,
+               "G98 interlace must complete in 38 stages");
 _Static_assert((GRAPH98_STAND_WIDTH % 8u) == 0u,
                "stand width must be byte aligned");
 _Static_assert(GRAPH98_STAND_BYTES_PER_LINE == 32u,

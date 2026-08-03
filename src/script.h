@@ -29,12 +29,11 @@ typedef struct {
 
     void (*set_message_box)(int x0, int y0, int x1, int y1);
     int (*change_ui)(const char *ui_file);
-    void (*draw_background)(const char *bg_file);
-    void (*draw_background_interlace)(const char *bg_file);
-    int (*draw_scene_vram)(const char *bg_file,
-                           const char *left_sprite,
-                           const char *right_sprite);
-    void (*draw_stand)(const char *sprite_file, int x, int y);
+    int (*change_scene)(const char *bg_file,
+                        const char *left_sprite,
+                        const char *right_sprite,
+                        uint8_t scene_mode,
+                        int use_interlace);
     void (*refresh_left_stand_only_interlace)(const char *bg_file,
                                               const char *sprite_file);
     void (*refresh_right_stand_only_interlace)(const char *bg_file,

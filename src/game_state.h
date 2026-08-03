@@ -1,6 +1,8 @@
 #ifndef GAME_STATE_H
 #define GAME_STATE_H
 
+#include <stdint.h>
+
 #define MAX_FLAGS 16
 #define CALL_STACK_MAX 8
 #define SAVE_SLOT_COUNT 3
@@ -8,6 +10,11 @@
 #define SPRITE_FILENAME_SIZE 13
 #define UI_FILENAME_SIZE 13
 #define DEFAULT_UI_FILE "UI.G98"
+
+enum SceneMode {
+    SCENE_MODE_SEPARATED_UI = 0,
+    SCENE_MODE_FULLSCREEN_CG = 1
+};
 
 typedef struct {
     char name[32];
@@ -25,6 +32,7 @@ typedef struct {
 
     char bgm[64];
     char ui_file[UI_FILENAME_SIZE];
+    uint8_t scene_mode;
 } GameState;
 
 #endif

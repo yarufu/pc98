@@ -2,11 +2,13 @@
 
 #include "debug.h"
 
+#include <stddef.h>
 #include <stdio.h>
 #include <string.h>
 
 #define SAVE_VERSION_V4 4
-#define SAVE_VERSION 5
+#define SAVE_VERSION_V5 5
+#define SAVE_VERSION 6
 
 typedef struct {
     char bg_file[BG_FILENAME_SIZE];
@@ -17,6 +19,17 @@ typedef struct {
     char right_sprite[SPRITE_FILENAME_SIZE];
     char bgm[64];
 } GameStateV4;
+
+typedef struct {
+    char bg_file[BG_FILENAME_SIZE];
+    int script_line;
+    int call_stack[CALL_STACK_MAX];
+    int call_stack_depth;
+    char left_sprite[SPRITE_FILENAME_SIZE];
+    char right_sprite[SPRITE_FILENAME_SIZE];
+    char bgm[64];
+    char ui_file[UI_FILENAME_SIZE];
+} GameStateV5;
 
 typedef struct {
     char magic[8];
@@ -33,28 +46,42 @@ typedef struct {
 typedef struct {
     char magic[8];
     int version;
-    GameState state;
+    GameStateV5 state;
     GameFlag flags[MAX_FLAGS];
 } SaveDataV5;
+
+typedef struct {
+    char magic[8];
+    int version;
+    GameState state;
+    GameFlag flags[MAX_FLAGS];
+} SaveDataV6;
 
 typedef union {
     SaveDataHeader header;
     SaveDataV4 v4;
     SaveDataV5 v5;
+    SaveDataV6 v6;
 } SaveDataBuffer;
 
 _Static_assert(sizeof(GameStateV4) == 124u,
                "version 4 GameState layout changed");
-_Static_assert(sizeof(GameState) == 138u,
+_Static_assert(sizeof(GameStateV5) == 138u,
                "version 5 GameState layout changed");
+_Static_assert(sizeof(GameState) == 138u,
+               "version 6 GameState layout changed");
+_Static_assert(offsetof(GameState, scene_mode) == 137u,
+               "version 6 scene mode must reuse V5 tail padding");
 _Static_assert(sizeof(SaveDataHeader) == 10u,
                "save header layout changed");
 _Static_assert(sizeof(SaveDataV4) == 678u,
                "version 4 SaveData layout changed");
 _Static_assert(sizeof(SaveDataV5) == 692u,
                "version 5 SaveData layout changed");
-_Static_assert(sizeof(SaveDataBuffer) == sizeof(SaveDataV5),
-               "save load buffer must use one V5-sized stack slot");
+_Static_assert(sizeof(SaveDataV6) == 692u,
+               "version 6 SaveData layout changed");
+_Static_assert(sizeof(SaveDataBuffer) == sizeof(SaveDataV6),
+               "save load buffer must use one V6-sized stack slot");
 
 static const char *g_save_slot_files[SAVE_SLOT_COUNT] = {
     "SAVE1.DAT",
@@ -84,6 +111,9 @@ static void save_terminate_state_strings(GameState *state)
     if (state->ui_file[0] == '\0') {
         strcpy(state->ui_file, DEFAULT_UI_FILE);
     }
+    if (state->scene_mode > SCENE_MODE_FULLSCREEN_CG) {
+        state->scene_mode = SCENE_MODE_SEPARATED_UI;
+    }
 }
 
 static void save_terminate_flag_names(GameFlag *flags)
@@ -95,7 +125,7 @@ static void save_terminate_flag_names(GameFlag *flags)
     }
 }
 
-static int save_v5_state_strings_valid(const GameState *state)
+static int save_v5_state_strings_valid(const GameStateV5 *state)
 {
     return save_string_has_nul(state->bg_file, sizeof(state->bg_file)) &&
            save_string_has_nul(state->left_sprite,
@@ -104,6 +134,18 @@ static int save_v5_state_strings_valid(const GameState *state)
                                sizeof(state->right_sprite)) &&
            save_string_has_nul(state->bgm, sizeof(state->bgm)) &&
            save_string_has_nul(state->ui_file, sizeof(state->ui_file));
+}
+
+static int save_v6_state_valid(const GameState *state)
+{
+    return save_string_has_nul(state->bg_file, sizeof(state->bg_file)) &&
+           save_string_has_nul(state->left_sprite,
+                               sizeof(state->left_sprite)) &&
+           save_string_has_nul(state->right_sprite,
+                               sizeof(state->right_sprite)) &&
+           save_string_has_nul(state->bgm, sizeof(state->bgm)) &&
+           save_string_has_nul(state->ui_file, sizeof(state->ui_file)) &&
+           state->scene_mode <= SCENE_MODE_FULLSCREEN_CG;
 }
 
 static void save_convert_v4_state(GameState *state,
@@ -121,6 +163,16 @@ static void save_convert_v4_state(GameState *state,
            sizeof(old_state->right_sprite));
     memcpy(state->bgm, old_state->bgm, sizeof(old_state->bgm));
     strcpy(state->ui_file, DEFAULT_UI_FILE);
+    state->scene_mode = SCENE_MODE_SEPARATED_UI;
+    save_terminate_state_strings(state);
+}
+
+static void save_convert_v5_state(GameState *state,
+                                  const GameStateV5 *old_state)
+{
+    memset(state, 0, sizeof(*state));
+    memcpy(state, old_state, sizeof(*old_state));
+    state->scene_mode = SCENE_MODE_SEPARATED_UI;
     save_terminate_state_strings(state);
 }
 
@@ -138,7 +190,7 @@ int save_game_state(const char *filename,
                     const GameFlag *flags)
 {
     FILE *fp;
-    SaveDataV5 save_data;
+    SaveDataV6 save_data;
 
     if (filename == 0 || state == 0 || flags == 0) {
         return 0;
@@ -205,8 +257,9 @@ int load_game_state(const char *filename,
     }
 
     version = save_data.header.version;
-    if (version != SAVE_VERSION_V4 && version != SAVE_VERSION) {
-        debug_log("LOAD FAILED bad version=%d expected=4 or 5", version);
+    if (version != SAVE_VERSION_V4 &&
+        version != SAVE_VERSION_V5 && version != SAVE_VERSION) {
+        debug_log("LOAD FAILED bad version=%d expected=4, 5 or 6", version);
         fclose(fp);
         return 0;
     }
@@ -231,21 +284,36 @@ int load_game_state(const char *filename,
         }
         save_convert_v4_state(state, &save_data.v4.state);
         memcpy(flags, save_data.v4.flags, sizeof(save_data.v4.flags));
-    } else {
+    } else if (version == SAVE_VERSION_V5) {
         if (fread(&save_data.v5, sizeof(save_data.v5), 1, fp) != 1) {
             debug_log("LOAD FAILED read V5 file=%s", filename);
             fclose(fp);
             return 0;
         }
         if (memcmp(save_data.v5.magic, "ADV98SAV", 8) != 0 ||
-            save_data.v5.version != SAVE_VERSION ||
+            save_data.v5.version != SAVE_VERSION_V5 ||
             !save_v5_state_strings_valid(&save_data.v5.state)) {
             debug_log("LOAD FAILED invalid V5 data");
             fclose(fp);
             return 0;
         }
-        *state = save_data.v5.state;
+        save_convert_v5_state(state, &save_data.v5.state);
         memcpy(flags, save_data.v5.flags, sizeof(save_data.v5.flags));
+    } else {
+        if (fread(&save_data.v6, sizeof(save_data.v6), 1, fp) != 1) {
+            debug_log("LOAD FAILED read V6 file=%s", filename);
+            fclose(fp);
+            return 0;
+        }
+        if (memcmp(save_data.v6.magic, "ADV98SAV", 8) != 0 ||
+            save_data.v6.version != SAVE_VERSION ||
+            !save_v6_state_valid(&save_data.v6.state)) {
+            debug_log("LOAD FAILED invalid V6 data");
+            fclose(fp);
+            return 0;
+        }
+        *state = save_data.v6.state;
+        memcpy(flags, save_data.v6.flags, sizeof(save_data.v6.flags));
         save_terminate_state_strings(state);
     }
 

@@ -98,13 +98,18 @@ static void ui_redraw_current_scene_from_state(void);
 static void ui_redraw_current_scene_vram_from_state(void);
 static void ui_present_current_ui(void);
 static int ui_change_theme(const char *ui_file);
+static int ui_change_scene(const char *bg_file,
+                           const char *left_sprite,
+                           const char *right_sprite,
+                           uint8_t scene_mode,
+                           int use_interlace);
 static void text98_hide_cursor(void);
 static void text98_clear_screen(void);
-static void ui_draw_background(const char *bg_file);
-static void ui_draw_background_interlace(const char *bg_file);
-static int ui_draw_current_scene_vram(const char *bg_file,
-                                      const char *left_sprite,
-                                      const char *right_sprite);
+static int ui_draw_scene_mode_raw(const char *bg_file,
+                                  const char *left_sprite,
+                                  const char *right_sprite,
+                                  uint8_t scene_mode,
+                                  int use_interlace);
 static void ui_draw_message_window(void);
 static void ui_set_message_box(int x0, int y0, int x1, int y1);
 static int ui_get_message_line_chars(void);
@@ -279,6 +284,38 @@ ui_refresh_status_ui(int erase)
     }
     if (erase < 0) erase = 0;
 
+    if (erase && g_state.scene_mode == SCENE_MODE_FULLSCREEN_CG &&
+        g_state.bg_file[0] != '\0') {
+        back_ready = graph98_prepare_rect_back_vram(
+            STATUS_LEFT_X, STATUS_TIME_Y,
+            STATUS_LEFT_X1, STATUS_MONEY_Y1);
+        if (!back_ready ||
+            !graph98_load_g98_rect(
+                g_state.bg_file,
+                STATUS_LEFT_X, STATUS_TIME_Y,
+                STATUS_LEFT_X1, STATUS_MONEY_Y1) ||
+            !graph98_present_rect_back_vram(
+                STATUS_LEFT_X, STATUS_TIME_Y,
+                STATUS_LEFT_X1, STATUS_MONEY_Y1)) {
+            debug_log("status erase left restore failed");
+            graph98_restore_default_pages();
+        }
+
+        back_ready = graph98_prepare_rect_back_vram(
+            STATUS_X, STATUS_TIME_Y, STATUS_X1, STATUS_MONEY_Y1);
+        if (!back_ready ||
+            !graph98_load_g98_rect(
+                g_state.bg_file,
+                STATUS_X, STATUS_TIME_Y, STATUS_X1, STATUS_MONEY_Y1) ||
+            !graph98_present_rect_back_vram(
+                STATUS_X, STATUS_TIME_Y, STATUS_X1, STATUS_MONEY_Y1)) {
+            debug_log("status erase right restore failed");
+            graph98_restore_default_pages();
+        }
+        g_status_ui_presented = 0;
+        return;
+    }
+
     if (hour < 0) hour = 0;
     if (hour > 99) hour = 99;
     if (minute < 0) minute = 0;
@@ -335,53 +372,55 @@ ui_refresh_status_ui(int erase)
     g_status_ui_presented = !erase;
 }
 
-static void __attribute__((noinline, optimize("Os")))
-ui_draw_background_effect(const char *bg_file, int use_interlace,
-                          const char *failure_format)
+static int __attribute__((noinline, optimize("Os")))
+ui_draw_scene_mode_raw(const char *bg_file,
+                       const char *left_sprite,
+                       const char *right_sprite,
+                       uint8_t scene_mode,
+                       int use_interlace)
 {
     int ok;
 
-    ui_present_current_ui();
-
-    if (bg_file != 0 && bg_file[0] != '\0') {
+    if (scene_mode == SCENE_MODE_FULLSCREEN_CG) {
+        if (bg_file == 0 || bg_file[0] == '\0') {
+            return 0;
+        }
+        g_status_ui_presented = 0;
         if (use_interlace) {
-            ok = graph98_load_g98_interlace(bg_file);
+            ok = graph98_load_g98_fullscreen_interlace(bg_file);
         } else {
-            ok = graph98_load_g98_rect(
-                bg_file,
-                GRAPH98_SCENE_X0, GRAPH98_SCENE_Y0,
-                GRAPH98_SCENE_X1, GRAPH98_SCENE_Y1);
+            ok = graph98_draw_ui_vram(bg_file, 0);
+        }
+        if (!ok) {
+            return 0;
         }
 
-        if (ok) {
-            return;
-        }
-        debug_log(failure_format, bg_file);
+        g_fixed_ui_presented = 0;
+        ui_draw_current_stands(left_sprite, right_sprite);
+        return 1;
     }
 
-    graph98_restore_default_pages();
-    graph98_boxfill(
-        GRAPH98_SCENE_X0, GRAPH98_SCENE_Y0,
-        GRAPH98_SCENE_X1, GRAPH98_SCENE_Y1, 0);
-    graph98_boxfill(80, 20, 240, 80, 4);
-    graph98_draw_string(90, 45, "BG LOAD NG", 15);
-}
+    if (scene_mode != SCENE_MODE_SEPARATED_UI) {
+        return 0;
+    }
 
-static void ui_draw_background(const char *bg_file)
-{
-    ui_draw_background_effect(bg_file, 0, "bg load failed: %s");
-}
-
-static void ui_draw_background_interlace(const char *bg_file)
-{
-    ui_draw_background_effect(bg_file, 1, "bg interlace load failed: %s");
-}
-
-static int ui_draw_current_scene_vram(const char *bg_file,
-                                      const char *left_sprite,
-                                      const char *right_sprite)
-{
     ui_present_current_ui();
+    if (bg_file == 0 || bg_file[0] == '\0') {
+        graph98_restore_default_pages();
+        graph98_boxfill(
+            GRAPH98_SCENE_X0, GRAPH98_SCENE_Y0,
+            GRAPH98_SCENE_X1, GRAPH98_SCENE_Y1, 0);
+        graph98_boxfill(80, 20, 240, 80, 4);
+        graph98_draw_string(90, 45, "BG LOAD NG", 15);
+        return 1;
+    }
+    if (use_interlace) {
+        if (!graph98_load_g98_interlace(bg_file)) {
+            return 0;
+        }
+        ui_draw_current_stands(left_sprite, right_sprite);
+        return 1;
+    }
 
     if (graph98_draw_scene_file_trans_vram(
             bg_file, left_sprite, right_sprite,
@@ -389,7 +428,54 @@ static int ui_draw_current_scene_vram(const char *bg_file,
         return 1;
     }
 
-    debug_log("scene draw failed: bg=%s", bg_file != 0 ? bg_file : "");
+    /* Preserve the established SPR failure fallback without committing a
+       background whose G98 itself cannot be loaded. */
+    graph98_restore_default_pages();
+    if (!graph98_load_g98_rect(
+            bg_file,
+            GRAPH98_SCENE_X0, GRAPH98_SCENE_Y0,
+            GRAPH98_SCENE_X1, GRAPH98_SCENE_Y1)) {
+        return 0;
+    }
+    ui_draw_current_stands(left_sprite, right_sprite);
+    return 1;
+}
+
+static int ui_change_scene(const char *bg_file,
+                           const char *left_sprite,
+                           const char *right_sprite,
+                           uint8_t scene_mode,
+                           int use_interlace)
+{
+    if (ui_draw_scene_mode_raw(
+            bg_file, left_sprite, right_sprite,
+            scene_mode, use_interlace)) {
+        return 1;
+    }
+
+    debug_log("scene change failed: bg=%s mode=%d interlace=%d",
+              bg_file != 0 ? bg_file : "", scene_mode, use_interlace);
+
+    graph98_restore_default_pages();
+    g_fixed_ui_presented = 0;
+    if (!ui_draw_scene_mode_raw(
+            g_state.bg_file, left_sprite, right_sprite,
+            g_state.scene_mode, 0)) {
+        graph98_restore_default_pages();
+        if (g_state.scene_mode == SCENE_MODE_SEPARATED_UI) {
+            ui_present_current_ui();
+            graph98_boxfill(
+                GRAPH98_SCENE_X0, GRAPH98_SCENE_Y0,
+                GRAPH98_SCENE_X1, GRAPH98_SCENE_Y1, 0);
+            graph98_boxfill(80, 20, 240, 80, 4);
+            graph98_draw_string(90, 45, "BG LOAD NG", 15);
+        } else {
+            graph98_clear(0);
+            graph98_boxfill(20, 20, 180, 80, 4);
+            graph98_draw_string(30, 45, "CG LOAD NG", 15);
+        }
+    }
+    ui_refresh_status_ui(STATUS_FIRST_PRESENT);
     return 0;
 }
 
@@ -429,10 +515,15 @@ static int ui_change_theme(const char *ui_file)
     g_fixed_ui_presented = 1;
     g_status_ui_presented = 0;
     if (g_state.bg_file[0] != '\0' &&
-        !ui_draw_current_scene_vram(
-            g_state.bg_file, g_state.left_sprite, g_state.right_sprite)) {
+        !ui_draw_scene_mode_raw(
+            g_state.bg_file, g_state.left_sprite, g_state.right_sprite,
+            SCENE_MODE_SEPARATED_UI, 0)) {
         graph98_restore_default_pages();
-        ui_redraw_current_scene_from_state();
+        graph98_boxfill(
+            GRAPH98_SCENE_X0, GRAPH98_SCENE_Y0,
+            GRAPH98_SCENE_X1, GRAPH98_SCENE_Y1, 0);
+        graph98_boxfill(80, 20, 240, 80, 4);
+        graph98_draw_string(90, 45, "BG LOAD NG", 15);
     }
     ui_refresh_status_ui(STATUS_FIRST_PRESENT);
     return 1;
@@ -724,21 +815,32 @@ static void ui_draw_choice_jis(int choice_count, int selected)
 /* 現在の背景＋立ち絵を再描画する関数 */
 static void ui_redraw_current_scene_from_state(void)
 {
-    ui_draw_background(g_state.bg_file);
+    if (ui_draw_scene_mode_raw(
+            g_state.bg_file, g_state.left_sprite, g_state.right_sprite,
+            g_state.scene_mode, 0)) {
+        return;
+    }
 
-    ui_draw_current_stands(g_state.left_sprite, g_state.right_sprite);
+    graph98_restore_default_pages();
+    if (g_state.scene_mode == SCENE_MODE_SEPARATED_UI) {
+        ui_present_current_ui();
+        graph98_boxfill(
+            GRAPH98_SCENE_X0, GRAPH98_SCENE_Y0,
+            GRAPH98_SCENE_X1, GRAPH98_SCENE_Y1, 0);
+        graph98_boxfill(80, 20, 240, 80, 4);
+        graph98_draw_string(90, 45, "BG LOAD NG", 15);
+    } else {
+        graph98_clear(0);
+        graph98_boxfill(20, 20, 180, 80, 4);
+        graph98_draw_string(30, 45, "CG LOAD NG", 15);
+    }
 }
 
 static void ui_redraw_current_scene_vram_from_state(void)
 {
     graph98_restore_default_pages();
     g_fixed_ui_presented = 0;
-    ui_present_current_ui();
-    if (!ui_draw_current_scene_vram(
-            g_state.bg_file, g_state.left_sprite, g_state.right_sprite)) {
-        graph98_restore_default_pages();
-        ui_redraw_current_scene_from_state();
-    }
+    ui_redraw_current_scene_from_state();
     ui_refresh_status_ui(STATUS_FIRST_PRESENT);
 }
 
@@ -1050,6 +1152,7 @@ int main(void)
     input_init(&input_context);
 
     for (;;) {
+        g_state.scene_mode = SCENE_MODE_SEPARATED_UI;
         g_status_ui_presented = 0;
         g_fixed_ui_presented = 0;
         g_system_action = SYSTEM_ACTION_NONE;
@@ -1075,10 +1178,7 @@ int main(void)
         script_context.system_action = &g_system_action;
         script_context.set_message_box = ui_set_message_box;
         script_context.change_ui = ui_change_theme;
-        script_context.draw_background = ui_draw_background;
-        script_context.draw_background_interlace = ui_draw_background_interlace;
-        script_context.draw_scene_vram = ui_draw_current_scene_vram;
-        script_context.draw_stand = ui_draw_stand;
+        script_context.change_scene = ui_change_scene;
         script_context.refresh_left_stand_only_interlace =
             ui_refresh_left_stand_only_interlace;
         script_context.refresh_right_stand_only_interlace =

@@ -29,7 +29,6 @@
 
 #define STATUS_X             549
 #define STATUS_LEFT_X         13
-#define STATUS_WEEKDAY_X      29
 #define STATUS_TIME_Y        326
 #define STATUS_MONEY_Y       354
 #define STATUS_CHAR_WIDTH     16
@@ -38,11 +37,8 @@
 #define STATUS_X1 (STATUS_X + STATUS_CHAR_WIDTH * STATUS_CHAR_COUNT - 1)
 #define STATUS_LEFT_X1 \
     (STATUS_LEFT_X + STATUS_CHAR_WIDTH * STATUS_CHAR_COUNT - 1)
-#define STATUS_WEEKDAY_X1 \
-    (STATUS_WEEKDAY_X + STATUS_CHAR_WIDTH * 3 - 1)
 #define STATUS_TIME_Y1 (STATUS_TIME_Y + STATUS_CHAR_HEIGHT - 1)
 #define STATUS_MONEY_Y1 (STATUS_MONEY_Y + STATUS_CHAR_HEIGHT - 1)
-#define STATUS_PANEL_COLOR    15
 #define STATUS_SPRITE_FILE "STATUS.SPR"
 #define STATUS_FIRST_PRESENT (-1)
 
@@ -249,6 +245,13 @@ ui_refresh_status_ui(int erase)
     int day;
     int weekday;
     int back_ready;
+    const char *base_file;
+
+    /* Page 0 still contains the title until the first separated UI is shown. */
+    if (g_state.scene_mode == SCENE_MODE_SEPARATED_UI &&
+        !g_fixed_ui_presented) {
+        return;
+    }
 
     enabled = 0;
     hour = 0;
@@ -284,36 +287,12 @@ ui_refresh_status_ui(int erase)
     }
     if (erase < 0) erase = 0;
 
-    if (erase && g_state.scene_mode == SCENE_MODE_FULLSCREEN_CG &&
-        g_state.bg_file[0] != '\0') {
-        back_ready = graph98_prepare_rect_back_vram(
-            STATUS_LEFT_X, STATUS_TIME_Y,
-            STATUS_LEFT_X1, STATUS_MONEY_Y1);
-        if (!back_ready ||
-            !graph98_load_g98_rect(
-                g_state.bg_file,
-                STATUS_LEFT_X, STATUS_TIME_Y,
-                STATUS_LEFT_X1, STATUS_MONEY_Y1) ||
-            !graph98_present_rect_back_vram(
-                STATUS_LEFT_X, STATUS_TIME_Y,
-                STATUS_LEFT_X1, STATUS_MONEY_Y1)) {
-            debug_log("status erase left restore failed");
-            graph98_restore_default_pages();
-        }
-
-        back_ready = graph98_prepare_rect_back_vram(
-            STATUS_X, STATUS_TIME_Y, STATUS_X1, STATUS_MONEY_Y1);
-        if (!back_ready ||
-            !graph98_load_g98_rect(
-                g_state.bg_file,
-                STATUS_X, STATUS_TIME_Y, STATUS_X1, STATUS_MONEY_Y1) ||
-            !graph98_present_rect_back_vram(
-                STATUS_X, STATUS_TIME_Y, STATUS_X1, STATUS_MONEY_Y1)) {
-            debug_log("status erase right restore failed");
-            graph98_restore_default_pages();
-        }
-        g_status_ui_presented = 0;
-        return;
+    if (g_state.scene_mode == SCENE_MODE_FULLSCREEN_CG) {
+        base_file = g_state.bg_file;
+    } else if (g_state.ui_file[0] != '\0') {
+        base_file = g_state.ui_file;
+    } else {
+        base_file = DEFAULT_UI_FILE;
     }
 
     if (hour < 0) hour = 0;
@@ -334,18 +313,23 @@ ui_refresh_status_ui(int erase)
             STATUS_X, STATUS_TIME_Y, STATUS_X1, STATUS_MONEY_Y1);
     }
     if (!back_ready) {
+        debug_log("status rect prepare failed");
         graph98_restore_default_pages();
+        return;
     }
 
-    graph98_boxfill(STATUS_LEFT_X, STATUS_TIME_Y,
-                    STATUS_LEFT_X1, STATUS_TIME_Y1, STATUS_PANEL_COLOR);
-    graph98_boxfill(STATUS_WEEKDAY_X, STATUS_MONEY_Y,
-                    STATUS_WEEKDAY_X1, STATUS_MONEY_Y1,
-                    STATUS_PANEL_COLOR);
-    graph98_boxfill(STATUS_X, STATUS_TIME_Y,
-                    STATUS_X1, STATUS_TIME_Y1, STATUS_PANEL_COLOR);
-    graph98_boxfill(STATUS_X, STATUS_MONEY_Y,
-                    STATUS_X1, STATUS_MONEY_Y1, STATUS_PANEL_COLOR);
+    /* Keep page 0 and the presented flag unchanged unless both restores work. */
+    if (!graph98_load_g98_rect(
+            base_file,
+            STATUS_LEFT_X, STATUS_TIME_Y,
+            STATUS_LEFT_X1, STATUS_MONEY_Y1) ||
+        !graph98_load_g98_rect(
+            base_file,
+            STATUS_X, STATUS_TIME_Y, STATUS_X1, STATUS_MONEY_Y1)) {
+        debug_log("status background restore failed: %s", base_file);
+        graph98_restore_default_pages();
+        return;
+    }
 
     if (!erase && !graph98_draw_status_file(
             STATUS_SPRITE_FILE,
@@ -354,20 +338,22 @@ ui_refresh_status_ui(int erase)
             month, day, weekday,
             hour, minute, money)) {
         debug_log("status sprite load failed");
+        /* Present the restored base only. */
+        erase = 1;
     }
 
-    if (back_ready) {
-        if (!graph98_present_rect_back_vram(
-                STATUS_LEFT_X, STATUS_TIME_Y,
-                STATUS_LEFT_X1, STATUS_MONEY_Y1)) {
-            debug_log("status left rect present failed");
-            graph98_restore_default_pages();
-        }
-        if (!graph98_present_rect_back_vram(
-                STATUS_X, STATUS_TIME_Y, STATUS_X1, STATUS_MONEY_Y1)) {
-            debug_log("status rect present failed");
-            graph98_restore_default_pages();
-        }
+    if (!graph98_present_rect_back_vram(
+            STATUS_LEFT_X, STATUS_TIME_Y,
+            STATUS_LEFT_X1, STATUS_MONEY_Y1)) {
+        debug_log("status left rect present failed");
+        graph98_restore_default_pages();
+        return;
+    }
+    if (!graph98_present_rect_back_vram(
+            STATUS_X, STATUS_TIME_Y, STATUS_X1, STATUS_MONEY_Y1)) {
+        debug_log("status right rect present failed");
+        graph98_restore_default_pages();
+        return;
     }
     g_status_ui_presented = !erase;
 }
@@ -512,6 +498,7 @@ static int ui_change_theme(const char *ui_file)
         return 0;
     }
 
+    strcpy(g_state.ui_file, ui_file);
     g_fixed_ui_presented = 1;
     g_status_ui_presented = 0;
     if (g_state.bg_file[0] != '\0' &&
